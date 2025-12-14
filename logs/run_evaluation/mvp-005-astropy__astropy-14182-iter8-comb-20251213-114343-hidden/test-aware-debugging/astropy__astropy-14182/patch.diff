@@ -1,0 +1,124 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- tests/test_example.py
++++ tests/test_example.py
+@@ -0,0 +1,25 @@
++# Test scenario: Verify that the buggy version of the function 'calculate_total' does not handle negative values correctly.
++def test_calculate_total_negative_value():
++    # The buggy function should raise a ValueError for negative inputs,
++    # but we expect it to fail on the buggy version.
++    with pytest.raises(ValueError):
++        calculate_total(-5)
++
++# Test scenario: Check how the function 'calculate_total' behaves with an empty input list.
++def test_calculate_total_empty_list():
++    # The function should return 0 for an empty list input.
++    result = calculate_total([])
++    assert result == 0, f"Expected 0 but got {result}"
++
++# Test scenario: Verify that the function 'calculate_total' can handle large numbers correctly.
++def test_calculate_total_large_numbers():
++    # Checking if the function can handle large integers correctly without overflow.
++    result = calculate_total([10**6, 10**6, 10**6])
++    assert result == 30 * 10**6, f"Expected {30 * 10**6} but got {result}"
++
++# Test scenario: Validate that the function 'calculate_total' returns the correct sum for mixed positive inputs.
++def test_calculate_total_mixed_positive_values():
++    result = calculate_total([1, 2, 3])
++    assert result == 6, f"Expected 6 but got {result}"
++
++# Test scenario: Check if the function correctly handles a list with a single positive value.
++def test_calculate_total_single_value():
++    result = calculate_total([42])
++    assert result == 42, f"Expected 42 but got {result}"
++
+--- .ta_split.json
++++ .ta_split.json
+@@ -0,0 +1,6 @@
++{
++    "public": [
++        "tests/test_example.py::test_calculate_total_negative_value",
++        "tests/test_example.py::test_calculate_total_empty_list",
++        "tests/test_example.py::test_calculate_total_single_value"
++    ],
++    "hidden": []
++}
+```
+```diff
+--- src/example.py
++++ src/example.py
+@@ -1,5 +1,6 @@
+ def calculate_total(values):
+     if values is None:
+         raise ValueError("Input cannot be None")
++    if any(v < 0 for v in values):
++        raise ValueError("Negative values are not allowed")
+     return sum(values)
+```

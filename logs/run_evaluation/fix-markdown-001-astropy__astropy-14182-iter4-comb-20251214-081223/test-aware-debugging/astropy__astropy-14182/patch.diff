@@ -1,0 +1,183 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+diff --git a/astropy/io/ascii/tests/test_rst.py b/astropy/io/ascii/tests/test_rst.py
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -2,7 +2,11 @@
+ 
+ from io import StringIO
+ 
++import numpy as np
++
++import astropy.units as u
+ from astropy.io import ascii
++from astropy.table import QTable
+ 
+ from .common import assert_almost_equal, assert_equal
+ 
+@@ -185,3 +189,27 @@ def test_write_normal():
+ ==== ========= ====
+ """,
+     )
++
++
++def test_rst_with_header_rows():
++    """Test RestructuredText output with header_rows option"""
++    lines = [
++        "======= ======== ====",
++        "   wave response ints",
++        "     nm       ct     ",
++        "float64  float32 int8",
++        "======= ======== ====",
++        "  350.0      1.0    1",
++        "  950.0      2.0    2",
++        "======= ======== ====",
++    ]
++    tbl = QTable({'wave': [350, 950]*u.nm, 'response': [1.0, 2.0]*u.ct, 'ints': [1, 2]})
++    
++    out = StringIO()
++    tbl.write(out, format="ascii.rst", header_rows=["name", "unit", "dtype"])
++    assert out.getvalue().splitlines() == lines
++    
++    result_tbl = QTable.read(StringIO(out.getvalue()), format="ascii.rst", header_rows=["name", "unit", "dtype"])
++    assert result_tbl["wave"].unit == u.nm
++    assert result_tbl["response"].unit == u.ct
++    assert result_tbl["wave"].dtype == np.float64
++    assert result_tbl["response"].dtype == np.float32
++    assert result_tbl["ints"].dtype == np.int8
+
+
+=== .ta_split.json ===
+{"public": ["astropy/io/ascii/tests/test_rst.py::test_rst_with_header_rows"], "hidden": []}
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -27,7 +27,6 @@ def get_fixedwidth_params(self, line):
+ 
+ 
+ class SimpleRSTData(FixedWidthData):
+-    start_line = 3
+     end_line = -1
+     splitter_class = FixedWidthTwoLineDataSplitter
+ 
+@@ -39,12 +38,29 @@ class RST(FixedWidth):
+ 
+     Example::
+ 
+-        ==== ===== ======
+-        Col1  Col2  Col3
+-        ==== ===== ======
+-          1    2.3  Hello
+-          2    4.5  Worlds
+-        ==== ===== ======
++      >>> from astropy.table import QTable
++      >>> import astropy.units as u
++      >>> import sys
++      >>> tbl = QTable({"wave": [350, 950] * u.nm, "response": [0.7, 1.2] * u.count})
++      >>> tbl.write(sys.stdout,  format="ascii.rst")
++      ===== ========
++       wave response
++      ===== ========
++      350.0      0.7
++      950.0      1.2
++      ===== ========
++
++    Like other fixed-width formats, when writing a table you can provide ``header_rows``
++    to specify a list of table rows to output as the header.  For example::
++
++      >>> tbl.write(sys.stdout,  format="ascii.rst", header_rows=['name', 'unit'])
++      ===== ========
++       wave response
++         nm       ct
++      ===== ========
++      350.0      0.7
++      950.0      1.2
++      ===== ========
+ 
+     Currently there is no support for reading tables which utilize continuation lines,
+     or for ones which define column spans through the use of an additional
+@@ -57,10 +73,15 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        idx = len(self.header.header_rows)
++        lines = [lines[idx]] + lines + [lines[idx]]
+         return lines
++
++    def read(self, table):
++        self.data.start_line = 2 + len(self.header.header_rows)
++        return super().read(table)

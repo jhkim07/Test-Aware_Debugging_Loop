@@ -1,0 +1,118 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+diff --git a/astropy/io/ascii/tests/test_rst.py b/astropy/io/ascii/tests/test_rst.py
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -185,3 +185,30 @@ def test_write_normal():
+ ==== ========= ==== ====
+ """,
+     )
++
++
++def test_rst_with_header_rows():
++    """Test RST writing with header_rows parameter.
++    
++    This test is designed to reproduce the bug where providing 
++    header_rows to the RST writer raises a TypeError. The expected
++    behavior is that the RST format should support header rows, but
++    currently results in an error when trying to write.
++    """
++    from io import StringIO
++    import numpy as np
++    import astropy.units as u
++    from astropy.table import QTable
++    
++    # Expecting header_rows to be parsed without error
++    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})
++    out = StringIO()
++    
++    # This should raise TypeError on the buggy version
++    tbl.write(out, format="ascii.rst", header_rows=["name", "unit"])
++    
++    # Expected output after fix
++    expected_output = (
++        "======= ========\n"
++        "   wave response\n"
++        "======= ========\n"
++        "350.0      0.7  \n"
++        "950.0      1.2  \n"
++        "======= ========\n"
++    )
++    assert out.getvalue() == expected_output
+``` 
+
+```json
+{
+  "public": [
+    "astropy/io/ascii/tests/test_rst.py::test_rst_with_header_rows"
+  ],
+  "hidden": []
+}
+```

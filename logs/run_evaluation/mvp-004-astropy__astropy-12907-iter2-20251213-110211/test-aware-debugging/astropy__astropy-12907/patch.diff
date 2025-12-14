@@ -1,0 +1,134 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+diff --git a/tests/test_example.py b/tests/test_example.py
+index abcdef1..1234567 100644
+--- a/tests/test_example.py
++++ b/tests/test_example.py
+@@ -1,5 +1,26 @@
+ # Tests for bug scenario XYZ
+ # The following test will fail on the buggy version because it does not handle edge case A correctly.
+ def test_function_with_bug():
+-    assert function_to_test(input) == expected_output
++    input = "edge_case_A"
++    expected_output = "expected_result_after_fix"
++    
++    # Act
++    result = function_to_test(input)
++    
++    # Assert
++    assert result == expected_output, f"Expected {expected_output}, but got {result} for input {input}"
++
++# Strengthening existing test for better defect detection
++def test_strong_existing_function():
++    inputs = [None, "", "valid_input", "edge_case_B"]
++    expected_outputs = ["error_message", "error_message", "expected_output", "expected_result"]
++
++    for i, input_value in enumerate(inputs):
++        result = function_to_test(input_value)
++        
++        # Check for invalid inputs
++        if input_value is None or input_value == "":
++            assert result == "error_message", f"Expected error for input {input_value}, but got {result}"
++        else:
++            assert result == expected_outputs[i], f"Expected {expected_outputs[i]}, but got {result} for input {input_value}"
+
+diff --git a/.ta_split.json b/.ta_split.json
+index 1234567..89abcde 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -1,5 +1,5 @@
+ {
+-    "public": [],
+-    "hidden": []
++    "public": ["tests/test_example.py::test_function_with_bug"],
++    "hidden": []
+ }
+```
+```diff
+--- a/production_code.py
++++ b/production_code.py
+@@ -1,5 +1,7 @@
+ def function_to_test(input_value):
+-    # Existing logic
++    if input_value is None or input_value == "":
++        return "error_message"
+     
+     # Process the input and return the expected result
+     # Placeholder for handling various cases
+     if input_value == "edge_case_A":
+         return "expected_result_after_fix"
+     elif input_value == "valid_input":
+         return "expected_output"
+     elif input_value == "edge_case_B":
+         return "expected_result"
+     
+     # Default case
+     return "default_output"
+```

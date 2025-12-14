@@ -1,0 +1,118 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- tests/test_example.py
++++ tests/test_example.py
+@@ -10,3 +10,21 @@
+ def test_existing_feature():
+     assert existing_function(2) == 4
+     assert existing_function(3) == 9
+     
++    # Test scenario: Check behavior with zero input
++    # This test should fail if the function does not handle zero correctly
++    assert existing_function(0) == 0
++
++    # Test scenario: Check behavior with negative input
++    # This test should fail if the function does not handle negative inputs correctly
++    assert existing_function(-1) == 1
++
++    # Test scenario: Test with large input value
++    # Ensures that the function can handle large computation without overflow or errors
++    assert existing_function(10000) == 100000000
++
++    # Test scenario: Ensure function raises an exception on invalid input type
++    # This test will check the error handling of the function on wrong input.
++    with pytest.raises(TypeError):
++        existing_function("string_input")
++
++    # Test scenario: Validate function with an empty input collection
++    # This checks if the function gracefully handles empty inputs
++    assert existing_function([]) == []  
++
+--- .ta_split.json
++++ .ta_split.json
+@@ -1,6 +1,7 @@
+ {
+     "public": [
++        "tests/test_example.py::test_existing_feature",
+         "tests/test_example.py::test_existing_feature"
+     ],
+     "hidden": []
+ }
+```
+```diff
+--- production_code.py
++++ production_code.py
+@@ -1,6 +1,7 @@
+ def existing_function(x):
+-    return x * x
++    if isinstance(x, (int, float)):
++        return x * x
++    raise TypeError("Input must be a number.")
+```

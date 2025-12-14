@@ -1,0 +1,114 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..84d3d41
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1,15 @@
++# Test scenario: Check behavior with empty input
+# This test is designed to fail if the function does not handle empty inputs correctly.
++def test_function_with_empty_input():
++    result = some_function([])  # Assuming some_function is the function under test
++    assert result == expected_empty_output  # Replace with the expected output for empty input
+
++# Test scenario: Check behavior with None as input
+# This test is designed to fail if the function does not handle None inputs correctly.
++def test_function_with_none_input():
++    result = some_function(None)  # Assuming some_function is the function under test
++    assert result == expected_none_output  # Replace with the expected output for None input
+
++# Test scenario: Check behavior with single element input
+# This test ensures the function correctly handles edge case with a single element.
++def test_function_with_single_element_input():
++    result = some_function([single_element])  # Replace single_element with a actual test value
++    assert result == expected_single_element_output  # Replace with the expected output for single input
++
++# Test scenario: Ensure the function fails on invalid input
+# This test checks that the function raises an error for invalid input types.
++def test_function_with_invalid_input():
++    with pytest.raises(ValueError):  # Assuming ValueError is the expected error for invalid inputs
++        some_function(invalid_input)  # Replace invalid_input with a value that should trigger an error
++
+diff --git a/.ta_split.json b/.ta_split.json
+index e69de29..bafd89b 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -0,0 +1,6 @@
++{
++  "public": [
++    "tests/test_example.py::test_function_with_empty_input",
++    "tests/test_example.py::test_function_with_none_input",
++    "tests/test_example.py::test_function_with_single_element_input",
++    "tests/test_example.py::test_function_with_invalid_input"
++  ],
++  "hidden": []
++}
+```

@@ -1,0 +1,124 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- tests/test_sample.py
++++ tests/test_sample.py
+@@ -0,0 +1,20 @@
++# Test scenario: Verify the behavior when an empty list is passed to the function.
++# This should raise a ValueError as the function expects at least one item to process.
++def test_function_empty_list():
++    with pytest.raises(ValueError, match="Input list must not be empty"):
++        your_function([])
+
++# Test scenario: Verify the behavior when a None input is passed to the function.
++# This should raise a TypeError since None is not a valid input type for the function.
++def test_function_none_input():
++    with pytest.raises(TypeError, match="Input must be a list"):
++        your_function(None)
+
++# Test scenario: Verify the behavior when a single item list is passed to the function.
++# This tests the minimum viable input the function can work with.
++def test_function_single_item():
++    result = your_function([42])  # Assuming your_function should return the input item.
++    assert result == 42
+
++# Test scenario: Verify function handling of a very large number input.
++# This checks if the function can handle extreme values without errors.
++def test_function_large_number():
++    result = your_function([10**12])
++    assert result == 10**12  # Modify according to expected function behavior.
+
+--- .ta_split.json
++++ .ta_split.json
+@@ -0,0 +1,10 @@
++{
++  "public": [
++    "tests/test_sample.py::test_function_empty_list",
++    "tests/test_sample.py::test_function_none_input",
++    "tests/test_sample.py::test_function_single_item"
++  ],
++  "hidden": [
++    "tests/test_sample.py::test_function_large_number"
++  ]
++}
+```
+```diff
+--- your_module.py
++++ your_module.py
+@@ -1,6 +1,10 @@
+ def your_function(input_list):
++    if input_list is None:
++        raise TypeError("Input must be a list")
++    if len(input_list) == 0:
++        raise ValueError("Input list must not be empty")
+     
+     # Process the input_list and return some result
+     # Assuming it just returns the first item for the sake of example
+     return input_list[0]
+```

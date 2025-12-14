@@ -1,0 +1,119 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+diff --git a/astropy/modeling/tests/test_separable.py b/astropy/modeling/tests/test_separable.py
+--- a/astropy/modeling/tests/test_separable.py
++++ b/astropy/modeling/tests/test_separable.py
+@@ -28,6 +28,13 @@
+ p1 = models.Polynomial1D(1, name='p1')
+ 
+ cm_4d_expected = (np.array([False, False, True, True]),
+                   np.array([[True,  True,  False, False],
+                             [True,  True,  False, False],
+                             [False, False, True,  False],
+                             [False, False, False, True]]))
+ 
++# Testing nested CompoundModels for separability_matrix function
++compound_models = {
++    'cm8': (m.Pix2Sky_TAN() & (m.Linear1D(10) & m.Linear1D(5)), cm_4d_expected),
++    'cm9': (m.Pix2Sky_TAN() & (m.Linear1D(10) & m.Linear1D(5) & m.Linear1D(5)), cm_4d_expected),
++}
++
+ def test_nested_compound_model_separability():
+     model = m.Pix2Sky_TAN() & (m.Linear1D(10) & m.Linear1D(5))
+     expected = cm_4d_expected[1]
+     result = separability_matrix(model)
+     assert np.array_equal(result, expected)
+ 
+ # Additional models can be added below as necessary
++
+ def test_some_other_model():
+     # ... existing test code ...
+
+diff --git a/.ta_split.json b/.ta_split.json
+index 0000000..1111111 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -0,0 +1,6 @@
++{
++    "public": [
++        "astropy/modeling/tests/test_separable.py::test_nested_compound_model_separability"
++    ],
++    "hidden": []
++}
+diff --git a/astropy/modeling/separable.py b/astropy/modeling/separable.py
+--- a/astropy/modeling/separable.py
++++ b/astropy/modeling/separable.py
+@@ -242,7 +242,7 @@ def _cstack(left, right):
+         cright = _coord_matrix(right, 'right', noutp)
+     else:
+         cright = np.zeros((noutp, right.shape[1]))
+-        cright[-right.shape[0]:, -right.shape[1]:] = 1
++        cright[-right.shape[0]:, -right.shape[1]:] = right
+ 
+     return np.hstack([cleft, cright])

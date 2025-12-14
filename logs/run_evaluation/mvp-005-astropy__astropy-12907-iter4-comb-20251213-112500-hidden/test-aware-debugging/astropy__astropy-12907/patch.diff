@@ -1,0 +1,120 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..f1e2a80
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1,16 @@
++# Test scenario: Testing a function that is expected to return the square of a number.
+# The function should correctly handle negative inputs, zero, and positive inputs.
+# The buggy implementation fails to return expected outputs for negative numbers.
++
++def buggy_square(x):
++    return x * x  # This is a placeholder for the buggy implementation.
++
++def test_square_positive():
++    assert buggy_square(3) == 9
++
++def test_square_zero():
++    assert buggy_square(0) == 0
++
++def test_square_negative():
++    assert buggy_square(-3) == 9  # This should pass after the fix.
++
++def test_square_edge_case():
++    assert buggy_square(-0) == 0  # Testing -0 should yield 0.
++
+diff --git a/.ta_split.json b/.ta_split.json
+index ec54417..f0d29b6 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -1,4 +1,5 @@
+ {
+-    "public": [],
+-    "hidden": []
++    "public": [
++        "tests/test_example.py::test_square_positive",
++        "tests/test_example.py::test_square_zero",
++        "tests/test_example.py::test_square_negative"
+     ],
+     "hidden": []
+ }
+```
+```diff
+diff --git a/production_code.py b/production_code.py
+index 1234567..89abcdef 100644
+--- a/production_code.py
++++ b/production_code.py
+@@ -1,6 +1,6 @@
+ def buggy_square(x):
+-    return x * x  # This is a placeholder for the buggy implementation.
++    return x ** 2  # Fixed implementation to correctly handle negative numbers.
+```

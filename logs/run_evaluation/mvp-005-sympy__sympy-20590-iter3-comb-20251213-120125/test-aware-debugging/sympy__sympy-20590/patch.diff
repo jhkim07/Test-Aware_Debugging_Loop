@@ -1,0 +1,133 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..f63d5b2
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1,22 @@
++# Test case: Check the behavior of the function under null input.
+# The function is expected to handle None input gracefully.
+def test_function_none_input():
++    result = my_function(None)
++    assert result == expected_output  # Replace with the expected output for None input
+
++# Test case: Check the function with an empty string input.
+# To ensure that empty strings are handled correctly.
+def test_function_empty_string():
++    result = my_function("")
++    assert result == expected_output  # Replace with the expected output 
+
++# Test case: Check the function with extreme values.
+# Here we test with very large integers to ensure the function doesn't break.
+def test_function_large_integer():
++    result = my_function(9999999999)
++    assert result == expected_output  # Replace with the expected output 
+
++# Test case: Check the function with negative values.
+# This is for ensuring that it can handle negative inputs properly.
+def test_function_negative_input():
++    result = my_function(-5)
++    assert result == expected_output  # Replace with the expected output 
+
+diff --git a/.ta_split.json b/.ta_split.json
+index 0f6b3e4..5d9536e 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -1,4 +1,4 @@
+ {
+-  "public": [],
+-  "hidden": []
++  "public": ["tests/test_example.py::test_function_none_input", "tests/test_example.py::test_function_empty_string"],
++  "hidden": ["tests/test_example.py::test_function_large_integer", "tests/test_example.py::test_function_negative_input"]
+ }
+```
+```diff
+diff --git a/src/example.py b/src/example.py
+index abcdef0..1234567 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1,6 +1,7 @@
+ def my_function(input_value):
+     if input_value is None:
+         return "Handled None"  # Replace with the actual expected output for None input
+     elif input_value == "":
+         return "Handled Empty String"  # Replace with the actual expected output for empty string
+     elif isinstance(input_value, int):
+         if input_value < 0:
+-            return "Handled Negative Value"  # Replace with the actual expected output for negative values
++            return "Handled Negative Value"  # Ensure this is the actual expected output for negative values
+         elif input_value > 9999999998:  # For large input handling
+             return "Handled Large Integer"  # Replace with the actual expected output for large integers
+         else:
+             return "Handled Regular Integer"  # Replace with the actual expected output for regular integers
+     else:
+         return "Unhandled Type"  # You may want to raise an error or handle unexpected types
+```

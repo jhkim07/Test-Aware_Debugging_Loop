@@ -1,0 +1,45 @@
+# Python 캐시
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# pytest 캐시
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 환경 변수
+.env
+.venv
+env/
+venv/
+ENV/
+
+# 실험 중간 생성 파일
+temp/
+tmp/
+*.log
+
+# 실행 중인 실험 정보 (로컬용)
+.experiment_running
+
+# SWE-bench harness 실행 결과 (임시)
+runs/
+test-aware-debugging.*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 실험 결과는 outputs/에 있으므로 무시하지 않음 (필요시 선택적으로 추가)
+# outputs/
+

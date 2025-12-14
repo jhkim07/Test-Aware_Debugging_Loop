@@ -1,0 +1,113 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- a/tests/test_example.py
++++ b/tests/test_example.py
+@@ -1,5 +1,28 @@
+ def test_function_with_bug():
++    # This test reproduces a bug where the function fails with incorrect input.
++    # The function is expected to return a result but raises an error instead.
+     result = function_that_has_bug(input_data)  # input_data is an invalid case
+     assert result == expected_output  # This line will fail on the current buggy version
+ 
++def test_function_empty_input():
++    # This test checks the scenario where the function is called with an empty input.
++    # It should handle this case gracefully, returning an appropriate result.
++    result = function_that_has_bug([])
++    assert result == expected_output_for_empty_input  # Expecting a specific output for empty input.
++
++def test_function_boundary_conditions():
++    # This test checks the function's behavior at the boundary of acceptable input values.
++    result_low = function_that_has_bug([LOW_BOUNDARY_VALUE])
++    assert result_low == expected_output_low_boundary  # Expecting specific output for low boundary.
++    
++    result_high = function_that_has_bug([HIGH_BOUNDARY_VALUE])
++    assert result_high == expected_output_high_boundary  # Expecting specific output for high boundary.
++
++def test_function_invalid_input():
++    # This test passes an invalid input type to ensure the function raises an exception.
++    with pytest.raises(ExpectedExceptionType):
++        function_that_has_bug(invalid_input)
++
+ # Optional existing tests that may be strengthened can be listed here
+ 
+```
+
+```json
+{
+    "public": [
+        "tests/test_example.py::test_function_with_bug",
+        "tests/test_example.py::test_function_empty_input",
+        "tests/test_example.py::test_function_boundary_conditions"
+    ],
+    "hidden": [
+        "tests/test_example.py::test_function_invalid_input"
+    ]
+}
+```

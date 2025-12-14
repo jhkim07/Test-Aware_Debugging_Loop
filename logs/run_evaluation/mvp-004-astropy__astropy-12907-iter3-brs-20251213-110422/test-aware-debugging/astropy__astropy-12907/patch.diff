@@ -1,0 +1,107 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+diff --git a/tests/test_example.py b/tests/test_example.py
+index e69de29..d95f3f6 100644
+--- a/tests/test_example.py
++++ b/tests/test_example.py
+@@ -0,0 +1,12 @@
++# Test to reproduce bug in addition function
++# This test fails on the buggy version where the addition logic has an error.
++def test_addition_bug():
++    assert addition(2, 3) == 5  # Expected output is 5, which tests the basic addition.
++
++# Test to capture behavior on negative inputs
++# This test checks how the function handles negative numbers.
++def test_addition_negative():
++    assert addition(-1, -1) == -2  # Expected output is -2.
++
++# Test to ensure correct behavior with zero
++# This test verifies that adding zero works correctly.
++def test_addition_zero():
++    assert addition(0, 5) == 5  # Expected output is 5.
++
++# Test to check addition with extreme values
++# This tests the addition function with large integers.
++def test_addition_large_numbers():
++    assert addition(10**18, 10**18) == 2 * 10**18  # Expected output is 2 * 10^18.
+diff --git a/.ta_split.json b/.ta_split.json
+index e69de29..28a1e2b 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -0,0 +1,6 @@
++{
++    "public": [
++        "tests/test_example.py::test_addition_bug"
++    ],
++    "hidden": [
++        
++    ]
++}
+```

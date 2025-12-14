@@ -1,0 +1,112 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- tests/test_example.py
++++ tests/test_example.py
+@@ -1,3 +1,16 @@
++"""
++Test for a buggy function `example_function` which should compute the sum of a list of numbers.
++The bug occurs when an empty list is passed, causing it to return None instead of 0.
++"""
++
+ def test_example_function():
+     assert example_function([1, 2, 3]) == 6  # Correct behavior
+     assert example_function([]) == 0  # Failing case, should return 0 not None
+ 
++"""
++Test for handling negative numbers in `example_function`.
++This ensures that the function correctly computes the sum even with negative values.
++"""
++
++def test_example_function_with_negatives():
++    assert example_function([-1, -2, -3]) == -6  # Correct behavior with negatives
++    assert example_function([-1, 1, 0]) == 0  # Neutral sum
++
+```
+
+```json
+{
+    "public": [
+        "tests/test_example.py::test_example_function",
+        "tests/test_example.py::test_example_function_with_negatives"
+    ],
+    "hidden": []
+}
+```
+```diff
+--- src/example.py
++++ src/example.py
+@@ -1,4 +1,4 @@
+ def example_function(numbers):
+-    if not numbers:
+-        return None
++    if not numbers:
++        return 0
+     return sum(numbers)
+```

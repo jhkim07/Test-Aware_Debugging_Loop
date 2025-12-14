@@ -1,0 +1,99 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- tests/test_example.py
++++ tests/test_example.py
+@@ -0,0 +1,15 @@
++# Test scenario: This test is designed to fail on the buggy version of the code.
++# The function 'example_function' is expected to return the sum of two numbers.
++# However, due to a bug, it incorrectly handle negative numbers.
++def example_function(a, b):
++    return a + b
++
++def test_example_function_with_negative_numbers():
++    # This test should fail because the buggy version does not correctly handle negative numbers.
++    assert example_function(-5, 3) == -2  # Expecting the correct result to be -2.
++
++def test_example_function_with_large_values():
++    # Testing with large integers to check for overflow or incorrect handling.
++    assert example_function(1_000_000_000, 1_000_000_000) == 2_000_000_000
++
++def test_example_function_with_zero():
++    # Zero case to check behavior with zero inputs.
++    assert example_function(0, 0) == 0
++
+--- .ta_split.json
++++ .ta_split.json
+@@ -1,5 +1,5 @@
+ {
+-    "public": [],
++    "public": ["tests/test_example.py::test_example_function_with_negative_numbers"],
+     "hidden": []
+ }
+```

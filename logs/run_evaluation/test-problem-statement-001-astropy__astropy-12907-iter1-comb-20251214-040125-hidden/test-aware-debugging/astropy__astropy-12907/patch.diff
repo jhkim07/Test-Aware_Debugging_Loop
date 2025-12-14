@@ -1,0 +1,126 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- tests/test_separability.py
++++ tests/test_separability.py
+@@ -0,0 +1,14 @@
++# Test for the incorrect behavior of separability_matrix with nested CompoundModels
++# According to the problem statement, the separability_matrix for nested models 
++# incorrectly reports dependencies between inputs and outputs.
+ 
++import numpy as np
++from astropy.modeling import models as m
++from astropy.modeling.separable import separability_matrix
++
++
++def test_separability_nested_compound_models():
++    # Define the nested compound models
++    cm = m.Linear1D(10) & m.Linear1D(5)
++    complex_model = m.Pix2Sky_TAN() & cm
++
++    # Expected separability matrix
++    expected_output = np.array([[ True,  True, False, False],
++                                 [ True,  True, False, False],
++                                 [False, False,  True,  True],
++                                 [False, False,  True,  True]])
++
++    # Actual output from the separability matrix function
++    actual_output = separability_matrix(complex_model)
++
++    # Assert if the actual output matches the expected output
++    assert np.array_equal(actual_output, expected_output), f"Expected {expected_output}, but got {actual_output}"
+
+--- .ta_split.json
++++ .ta_split.json
+@@ -1,4 +1,4 @@
+ {
+-    "public": [],
+-    "hidden": []
++    "public": ["tests/test_separability.py::test_separability_nested_compound_models"],
++    "hidden": []
+ }
+```
+```diff
+diff --git a/astropy/modeling/separable.py b/astropy/modeling/separable.py
+index e2d3d5f..2bff992 100644
+--- a/astropy/modeling/separable.py
++++ b/astropy/modeling/separable.py
+@@ -175,7 +175,10 @@ def separability_matrix(model):
+             return np.array([[True]])
+ 
+     # Check if the model is a CompoundModel
+-    if isinstance(model, CompoundModel):
++    if isinstance(model, CompoundModel) and not model._is_nested:
++        # Handle non-nested CompoundModels
++        mats = [separability_matrix(sub) for sub in model]
++        return np.block([[mats[i] if i == j else np.zeros_like(mats[i]) for j in range(len(mats))] for i in range(len(mats))])
+ 
+     inputs = model.inputs
+     outputs = model.outputs
+```

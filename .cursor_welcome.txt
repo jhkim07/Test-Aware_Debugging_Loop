@@ -1,0 +1,27 @@
+═══════════════════════════════════════════════════════════════
+  Test-Aware SWE-bench MVP 프로젝트
+═══════════════════════════════════════════════════════════════
+
+🔍 실행 중인 실험 확인:
+   ./scripts/check_experiment.sh
+
+📊 실험 결과 확인:
+   ls -lh outputs/
+
+📝 로그 확인:
+   tail -f logs/<run-id>.log
+
+🚀 새 실험 시작:
+   ./scripts/run_mvp_nohup.sh configs/mvp.yaml mvp-XXX 1
+
+📚 문서:
+   - README.md: 프로젝트 개요
+   - EXPERIMENT_STATUS.md: 실험 상태 확인 가이드
+   - RUNNING_EXPERIMENTS.md: 실험 실행 가이드
+   - DOCUMENTATION_INDEX.md: 전체 문서 인덱스
+
+═══════════════════════════════════════════════════════════════
+
+
+
+

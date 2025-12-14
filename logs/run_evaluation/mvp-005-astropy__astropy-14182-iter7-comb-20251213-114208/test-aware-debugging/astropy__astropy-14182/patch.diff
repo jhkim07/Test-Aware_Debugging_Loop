@@ -1,0 +1,118 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- tests/test_buggy.py
++++ tests/test_buggy.py
+@@ -0,0 +1,15 @@
++# Test scenario: This test checks the function under conditions that 
++# lead to a known bug, specifically testing how it handles negative input values. 
++# The function is expected to raise a ValueError when it encounters negative inputs,
++# but currently it does not, thus failing the test.
++
++import pytest
++
++def faulty_function(value):
++    if value < 0:
++        raise ValueError("Negative value not allowed")
++    return value * 2
++
++def test_faulty_function_negative_input():
++    with pytest.raises(ValueError, match="Negative value not allowed"):
++        faulty_function(-1)
++
++# Additional edge case: Testing zero input
++def test_faulty_function_zero_input():
++    assert faulty_function(0) == 0
++
++def test_faulty_function_positive_input():
++    assert faulty_function(2) == 4
++
+--- .ta_split.json
++++ .ta_split.json
+@@ -0,0 +1,8 @@
++{
++    "public": [
++        "tests/test_buggy.py::test_faulty_function_negative_input"
++    ],
++    "hidden": [
++        "tests/test_buggy.py::test_faulty_function_zero_input",
++        "tests/test_buggy.py::test_faulty_function_positive_input"
++    ]
++}
+```
+```diff
+--- production_code.py
++++ production_code.py
+@@ -1,5 +1,6 @@
+ def faulty_function(value):
+     if value < 0:
+-        pass  # Current implementation does not handle negative input correctly.
++        raise ValueError("Negative value not allowed")  # Correctly handle negative input
+     return value * 2
+```

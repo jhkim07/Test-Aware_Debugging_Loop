@@ -1,0 +1,48 @@
+--- /dev/null
+diff --git a/astropy/io/ascii/tests/test_rst.py b/astropy/io/ascii/tests/test_rst.py
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -2,6 +2,40 @@
+ from io import StringIO
+
++import numpy as np
++
++import astropy.units as u
+ from astropy.io import ascii
++from astropy.table import QTable
+
+ from .common import assert_almost_equal, assert_equal
+
+ ==== ========= ====
+ """,
+     )
++
++
++def test_rst_with_header_rows():
++    """Test RST output with header rows specified, which currently raises TypeError."""
++    lines = [
++        "======= ======== ====",
++        "   wave response ints",
++        "     nm       ct     ",
++        "float64  float32 int8",
++        "======= ======== ====",
++        "  350.0      1.0    1",
++        "  950.0      2.0    2",
++        "======= ======== ====",
++    ]
++    tbl = QTable({'wave': [350, 950]*u.nm, 'response': [1.0, 2.0]*u.ct})
++
++    # Attempt to write with header_rows - this should raise TypeError as per the bug report
++    try:
++        tbl.write(StringIO(), format="ascii.rst", header_rows=["name", "unit", "dtype"])
++        assert False, "Expected TypeError not raised"
++    except TypeError:
++        pass  # Expected behavior, TypeError should be raised
++
++    # Verify that writing without header_rows works correctly
++    out = StringIO()
++    tbl.write(out, format="ascii.rst")  # Check regular output without header_rows
++    assert "======= ========" in out.getvalue()
++    assert "   wave response" in out.getvalue()
++    assert "350.0      1.0" in out.getvalue()
++    assert "950.0      2.0" in out.getvalue()

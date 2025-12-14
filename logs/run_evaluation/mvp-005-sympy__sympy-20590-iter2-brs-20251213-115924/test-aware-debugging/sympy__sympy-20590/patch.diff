@@ -1,0 +1,102 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+--- tests/test_example.py
++++ tests/test_example.py
+@@ -1,5 +1,13 @@
+ def buggy_function(input):
+     # This is a placeholder for the actual function logic.
+-    return input * 2
++    if input is None:
++        raise ValueError("Input cannot be None")
++    return input * 2
+ 
+-def test_buggy_function():
+-    assert buggy_function(3) == 6
++    # Test scenario: Function should raise an error when input is None
++def test_buggy_function_none_input():
++    with pytest.raises(ValueError, match="Input cannot be None"):
++        buggy_function(None)
++
++    # Test scenario: Verify correct output for a valid input
++def test_buggy_function_valid_input():
++    assert buggy_function(3) == 6
+
+--- .ta_split.json
++++ .ta_split.json
+@@ -1,5 +1,7 @@
+ {
+-    "public": [],
++    "public": [
++        "tests/test_example.py::test_buggy_function_none_input",
++        "tests/test_example.py::test_buggy_function_valid_input"
+     ],
+     "hidden": []
+ }
+```

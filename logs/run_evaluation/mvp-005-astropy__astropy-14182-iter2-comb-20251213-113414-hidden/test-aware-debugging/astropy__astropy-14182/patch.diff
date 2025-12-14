@@ -1,0 +1,112 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+
+```diff
+diff --git a/tests/test_example.py b/tests/test_example.py
+index abcdef1..1234567 100644
+--- a/tests/test_example.py
++++ b/tests/test_example.py
+@@ -1,5 +1,11 @@
+ # Test scenario: testing the behavior of the function under certain buggy conditions
+ # The function is expected to return the correct sum of two numbers, 
+ # but there's a bug that causes it to fail with certain input pairs (e.g., negative numbers).
+ 
++def test_function_sum_with_negative_numbers():
++    # This test case checks how the function handles negative inputs.
++    assert function_sum(-1, -1) == -2
++
++def test_function_sum_with_zero():
++    # Test case to check the summation with zero.
++    assert function_sum(0, 0) == 0
+
+ def test_function_sum_with_positive_numbers():
+     # Regular case: positive numbers should return correct sum.
+     assert function_sum(1, 1) == 2
+```
+
+```json
+{
+    "public": ["tests/test_example.py::test_function_sum_with_negative_numbers", 
+               "tests/test_example.py::test_function_sum_with_zero", 
+               "tests/test_example.py::test_function_sum_with_positive_numbers"],
+    "hidden": []
+}
+```
+```diff
+diff --git a/src/example.py b/src/example.py
+index 1234567..89abcdef 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1,6 +1,6 @@
+ def function_sum(a, b):
+     # Fix added to handle negative numbers correctly
+     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+         return a + b
+-    raise ValueError("Both inputs must be numbers.")
++    raise ValueError("Both inputs must be integers or floats.")
+```
