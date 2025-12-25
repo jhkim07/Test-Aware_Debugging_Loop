@@ -1,0 +1,26 @@
+--- /dev/null
+diff --git a/sympy/core/tests/test_basic.py b/sympy/core/tests/test_basic.py
+--- a/sympy/core/tests/test_basic.py
++++ b/sympy/core/tests/test_basic.py
+@@ -34,10 +34,19 @@
+     assert bool(b1)
+ 
++def test_symbol_immutable():
++    s = sympy.Symbol('s')
++    assert not hasattr(s, '__dict__'), "Symbol instance should not have __dict__ attribute"
++    with raises(AttributeError):
++        s.x = 1
++
++
+ def test_equality():
+     instances = [b1, b2, b3, b21, Basic(b1, b1, b1), Basic]
+     for i, b_i in enumerate(instances):
+ And here is the updated `.ta_split.json`:
+ 
++{
+  "public": [
+    "sympy/core/tests/test_basic.py::test_symbol_immutable"
+  ],
+  "hidden": []
++}
+ This test checks if the `__dict__` attribute exists for a `Symbol` instance and if it can be modified. The test should fail if the `__dict__` attribute exists or can be modified, as `Symbol` instances are supposed to be immutable. This test reproduces the bug described in the problem statement.

@@ -1,0 +1,1 @@
+{"focus": "patch", "hypotheses": ["The `separability_matrix` function may not be correctly handling the nested CompoundModels. The issue seems to be with the way the function is interpreting the separability of nested models, causing it to incorrectly mark inputs and outputs as inseparable."], "targets": ["separability_matrix function in the modeling module"]}

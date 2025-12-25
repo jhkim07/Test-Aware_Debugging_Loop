@@ -1,0 +1,103 @@
+{
+  "total_instances": 4,
+  "completed_instances": 4,
+  "successful_instances": 2,
+  "aggregate_scores": {
+    "hfs": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+    ],
+    "tss": [
+      0.0,
+      0.5,
+      0.5,
+      1.0
+    ],
+    "brs": [
+      0.0,
+      1.0,
+      0.0,
+      1.0
+    ],
+    "overall": [
+      0.14375000000000002,
+      0.225,
+      0.8687499999999999,
+      0.9937499999999999
+    ]
+  },
+  "public_pass_rates": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+  ],
+  "hidden_pass_rates": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+  ],
+  "overfit_gaps": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "iterations": [
+    1,
+    8,
+    1,
+    1
+  ],
+  "instance_details": [
+    {
+      "instance_id": "astropy__astropy-14365",
+      "public_pass_rate": 0.0,
+      "hidden_pass_rate": 0.0,
+      "overfit_gap": 0.0,
+      "brs_fail_on_buggy": false,
+      "iterations": 1,
+      "overall_score": 0.14375000000000002
+    },
+    {
+      "instance_id": "astropy__astropy-14182",
+      "public_pass_rate": 0.0,
+      "hidden_pass_rate": 0.0,
+      "overfit_gap": 0.0,
+      "brs_fail_on_buggy": true,
+      "iterations": 8,
+      "overall_score": 0.225
+    },
+    {
+      "instance_id": "sympy__sympy-20590",
+      "public_pass_rate": 1.0,
+      "hidden_pass_rate": 1.0,
+      "overfit_gap": 0.0,
+      "brs_fail_on_buggy": false,
+      "iterations": 1,
+      "overall_score": 0.8687499999999999
+    },
+    {
+      "instance_id": "astropy__astropy-12907",
+      "public_pass_rate": 1.0,
+      "hidden_pass_rate": 1.0,
+      "overfit_gap": 0.0,
+      "brs_fail_on_buggy": true,
+      "iterations": 1,
+      "overall_score": 0.9937499999999999
+    }
+  ],
+  "averages": {
+    "hfs": 0.5,
+    "tss": 0.5,
+    "brs": 0.5,
+    "overall": 0.5578124999999999,
+    "public_pass_rate": 0.5,
+    "hidden_pass_rate": 0.5,
+    "overfit_gap": 0.0,
+    "iterations": 2.75
+  }
+}

@@ -1,0 +1,58 @@
+Loading metrics for run: test-verify-full-20251223-101204...
+================================================================================
+성능 분석 리포트: test-verify-full-20251223-101204
+================================================================================
+
+📊 전체 통계:
+  총 인스턴스: 4
+  완료된 인스턴스: 4
+  성공한 인스턴스 (Public Pass Rate > 0%): 2
+  성공률: 50.0%
+
+📈 평균 메트릭:
+  Public Pass Rate: 50.00%
+  Hidden Pass Rate: 50.00%
+  Overfit Gap: 0.00%
+  평균 Iterations: 2.8
+
+🎯 평균 점수:
+  HFS (Hidden Fix Score): 50.00%
+  TSS (Test Strength Score): 50.00%
+  BRS Score: 50.00%
+  Overall Score: 55.78%
+
+📋 인스턴스별 상세:
+
+  astropy__astropy-12907:
+    Public Pass Rate: 100.00%
+    Hidden Pass Rate: 100.00%
+    Overfit Gap: 0.00%
+    BRS: ✅
+    Iterations: 1
+    Overall Score: 99.37%
+
+  sympy__sympy-20590:
+    Public Pass Rate: 100.00%
+    Hidden Pass Rate: 100.00%
+    Overfit Gap: 0.00%
+    BRS: ❌
+    Iterations: 1
+    Overall Score: 86.87%
+
+  astropy__astropy-14182:
+    Public Pass Rate: 0.00%
+    Hidden Pass Rate: 0.00%
+    Overfit Gap: 0.00%
+    BRS: ✅
+    Iterations: 8
+    Overall Score: 22.50%
+
+  astropy__astropy-14365:
+    Public Pass Rate: 0.00%
+    Hidden Pass Rate: 0.00%
+    Overfit Gap: 0.00%
+    BRS: ❌
+    Iterations: 1
+    Overall Score: 14.38%
+
+✅ 리포트 저장: outputs/test-verify-full-20251223-101204/performance_report.json

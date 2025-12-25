@@ -1,0 +1,42 @@
+Based on the problem statement and the reference test patch, we need to create a test that checks if the `__dict__` attribute exists for a `Symbol` instance. The test should fail if the attribute exists, as it should not be present according to the problem statement.
+
+The test will be added to the `sympy/core/tests/test_basic.py` file, following the structure of the reference test patch. The test will create a `Symbol` instance and assert that it does not have a `__dict__` attribute.
+
+Here is the test diff:
+
+```diff
+diff --git a/sympy/core/tests/test_basic.py b/sympy/core/tests/test_basic.py
+--- a/sympy/core/tests/test_basic.py
++++ b/sympy/core/tests/test_basic.py
+@@ -34,6 +34,12 @@ def test_structure():
+     assert bool(b1)
+ 
+ 
++def test_symbol_no_dict():
++    s = sympy.Symbol('s')
++    assert not hasattr(s, '__dict__')
++    with raises(AttributeError):
++        s.x = 1
++
+ def test_equality():
+     instances = [b1, b2, b3, b21, Basic(b1, b1, b1), Basic]
+     for i, b_i in enumerate(instances):
+```
+
+The `.ta_split.json` file will be updated to include the new test in the `public` section:
+
+```diff
+diff --git a/.ta_split.json b/.ta_split.json
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -1,5 +1,6 @@
+ {
+     "public": [
++        "sympy/core/tests/test_basic.py::test_symbol_no_dict",
+         ...
+     ],
+     "hidden": []
+ }
+```
+
+This test will fail on the buggy code because the `__dict__` attribute exists for `Symbol` instances, and it will pass after the bug is fixed.

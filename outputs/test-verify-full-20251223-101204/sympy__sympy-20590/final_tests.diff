@@ -1,0 +1,16 @@
+diff --git a/sympy/core/tests/test_basic.py b/sympy/core/tests/test_basic.py
+--- a/sympy/core/tests/test_basic.py
++++ b/sympy/core/tests/test_basic.py
+@@ -30,4 +30,11 @@
+     assert bool(b1)
+
++def test_immutable():
++    # Tests that Symbol instances do not have a __dict__ attribute
++    s = sympy.Symbol('s')
++    assert not hasattr(s, '__dict__')  # Check that __dict__ does not exist
++    with raises(AttributeError):  # Attempting to set an attribute should raise an error
++        s.x = 1
++
+ def test_equality():
+     instances = [b1, b2, b3, b21, Basic(b1, b1, b1), Basic]
+     for i, b_i in enumerate(instances):

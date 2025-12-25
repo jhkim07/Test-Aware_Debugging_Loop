@@ -1,0 +1,41 @@
+p1 = models.Polynomial1D(1, name='p1')
+
++cm_4d_expected = (np.array([False, False, True, True]),
++                  np.array([[True,  True,  False, False],
++                            [True,  True,  False, False],
++                            [False, False,  True,  False],
++                            [False, False, False,  True]]))
++
++
+ compound_models = {
+     'cm1': (map3 & sh1 | rot & sh1 | sh1 & sh2 & sh1,
+             (np.array([False, False, True]),
+             )
++    'cm8': (rot & (sh1 & sh2), cm_4d_expected),
++    'cm9': (rot & sh1 & sh2, cm_4d_expected),
++    'cm10': ((rot & sh1) & sh2, cm_4d_expected),
++    'cm11': (rot & sh1 & (scl1 & scl2),
++             (np.array([False, False, True, True, True]),
++              np.array([[True,  True,  False, False, False],
++                        [True,  True,  False, False, False],
++                        [False, False, True,  False, False],
++                        [False, False, False, True,  False],
++                        [False, False, False, False, True]]))),
+ }
+
++
+
+diff --git a/.ta_split.json b/.ta_split.json
+index 0000000..1111111 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -0,0 +1,9 @@
++{
++    "public": [
++        "astropy/modeling/tests/test_separable.py::test_cm8",
++        "astropy/modeling/tests/test_separable.py::test_cm9",
++        "astropy/modeling/tests/test_separable.py::test_cm10",
++        "astropy/modeling/tests/test_separable.py::test_cm11"
++    ],
++    "hidden": []
++}

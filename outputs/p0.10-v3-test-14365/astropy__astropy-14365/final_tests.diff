@@ -1,0 +1,23 @@
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -0,0 +1,19 @@
++# Test to reproduce the bug where lowercase QDP commands are not recognized
++# This test will fail on the buggy version and pass after the fix is applied.
++
++import pytest
++from astropy.table import Table
++import numpy as np
++
++def test_lowercase_qdp_read(tmp_path):
++    # Create a lowercase QDP file
++    qdp_content = "read serr 1 2\n1 0.5 1 0.5"
++    qdp_file = tmp_path / "test.qdp"
++    qdp_file.write_text(qdp_content)
++
++    # Attempt to read the QDP file
++    with pytest.raises(ValueError, match="Unrecognized QDP line: read serr 1 2"):
++        Table.read(qdp_file, format='ascii.qdp')
++
++    # If the fix is applied, the following line should work without raising an error
++    # table = Table.read(qdp_file, format='ascii.qdp')

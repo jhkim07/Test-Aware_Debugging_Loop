@@ -1,0 +1,20 @@
+{
+  "instance_id": "astropy__astropy-14182",
+  "iterations": 8,
+  "max_iters": 8,
+  "time_limit_minutes": 30,
+  "scores": {
+    "hfs": 0.0,
+    "tss": 0.5,
+    "og": 0.0,
+    "brs": 1.0,
+    "overall": 0.225
+  },
+  "final_iteration": {
+    "public_pass_rate": 0.0,
+    "hidden_pass_rate": 0.0,
+    "overfit_gap": 0.0,
+    "brs_fail_on_buggy": true
+  },
+  "note": "Metrics computed from harness reports. HFS=Hidden Fix Score, TSS=Test Strength Score, OG=Overfit Gap, BRS=Bug Reproduction Strength."
+}

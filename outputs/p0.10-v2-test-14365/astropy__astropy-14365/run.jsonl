@@ -1,0 +1,1 @@
+{"iter": 1, "stage": "test_policy_reject", "issues": ["file I/O patterns found: ['\\\\.write_text\\\\('] (consider removing or using tmp_path carefully)"]}

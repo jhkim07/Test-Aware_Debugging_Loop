@@ -1,0 +1,15 @@
+--- /dev/null
+diff --git a/.ta_split.json b/.ta_split.json
+index 0000000..1111111 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -0,0 +1,9 @@
++{
++    "public": [
++        "astropy/modeling/tests/test_separable.py::test_cm8",
++        "astropy/modeling/tests/test_separable.py::test_cm9",
++        "astropy/modeling/tests/test_separable.py::test_cm10",
++        "astropy/modeling/tests/test_separable.py::test_cm11"
++    ],
++    "hidden": []
++}
