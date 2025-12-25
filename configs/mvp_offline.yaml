@@ -18,7 +18,7 @@ limits:
   time_limit_minutes: 30
 llm:
   enabled: false
-  model: gpt-4o-mini
+  model: gpt-4o
 metrics:
   mutation: false
   coverage: false
