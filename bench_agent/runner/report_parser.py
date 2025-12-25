@@ -10,31 +10,50 @@ from typing import Optional
 def check_patch_apply_failed(stdout: str, stderr: str) -> bool:
     """
     Check if patch application failed by looking for error messages.
-    
+
+    P0-1 Enhancement: More accurate detection of patch apply failures
+    including "Hunk #N FAILED" pattern from astropy__astropy-14182 logs.
+
     Args:
         stdout: Harness stdout text
         stderr: Harness stderr text
-    
+
     Returns:
         True if patch application failed, False otherwise
     """
     combined = (stdout or "") + "\n" + (stderr or "")
-    
-    # Check for patch application failure indicators
-    failure_indicators = [
+
+    # Definite failure indicators (high confidence)
+    definite_failures = [
         "Patch Apply Failed",
         "malformed patch",
         "patch: ****",
         "Failed to apply patch",
-        "patching file",
+        r"Hunk #\d+ FAILED",  # regex pattern for hunk failures
+        "patch does not apply",
+        "can't find file to patch",
+        "No such file or directory",
     ]
-    
-    # If we see "Patch Apply Failed" or "malformed patch", it's definitely a failure
-    if any(indicator in combined for indicator in ["Patch Apply Failed", "malformed patch", "patch: ****"]):
-        return True
-    
-    # If we see "patching file" but no success indicators, might be a failure
-    # But this is less reliable, so we'll be conservative
+
+    # Check definite failures
+    for indicator in definite_failures:
+        if indicator.startswith(r'Hunk'):
+            # Use regex for hunk failure pattern
+            if re.search(indicator, combined, re.IGNORECASE):
+                return True
+        elif indicator in combined:
+            return True
+
+    # Check for "patching file" followed by "FAILED" within next few lines
+    # This catches cases where patch starts but fails mid-way
+    if "patching file" in combined and "FAILED" in combined:
+        # More sophisticated check: look for FAILED within 100 chars of "patching file"
+        patch_positions = [m.start() for m in re.finditer(r'patching file', combined)]
+        for pos in patch_positions:
+            nearby_text = combined[pos:pos+200]
+            if "FAILED" in nearby_text:
+                return True
+
     return False
 
 

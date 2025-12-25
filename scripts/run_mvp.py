@@ -287,10 +287,33 @@ def main():
                         if "Iteration" in content and "feedback" in content:
                             previous_feedback = content
                             break
-            
-            test_diff = propose_tests(client, model, repo_ctx, failure, current_tests_hint="", previous_feedback=previous_feedback) if client else ""
+
+            # P0-2: Extract expected value hints from test_analysis (created earlier during repo_ctx setup)
+            expected_value_hints = ""
+            if 'test_analysis' in locals() and test_analysis and test_analysis.get('expected_value_hints'):
+                expected_value_hints = test_analysis['expected_value_hints']
+
+            test_diff = propose_tests(
+                client, model, repo_ctx, failure,
+                current_tests_hint="",
+                previous_feedback=previous_feedback,
+                expected_value_hints=expected_value_hints  # P0-2: Add expected value enforcement
+            ) if client else ""
             # Clean test_diff to fix format issues and line numbers
             test_diff = clean_diff_format(test_diff) if test_diff else ""
+
+            # P0.9: Apply normalization to test_diff immediately after generation
+            # This ensures BRS validation uses normalized test_diff
+            if test_diff and reference_patch:
+                try:
+                    from bench_agent.protocol.pre_apply_normalization import PreApplyNormalizationGate
+                    normalizer = PreApplyNormalizationGate(reference_patch, verbose=False, instance_id=instance_id)
+                    test_diff, test_norm_report = normalizer.normalize_diff(test_diff, diff_type="test")
+                    if test_norm_report.total_fixes() > 0:
+                        console.print(f"[cyan]P0.9: Normalized test_diff ({test_norm_report.total_fixes()} fixes)[/cyan]")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Test diff normalization failed: {e}[/yellow]")
+
             ok, issues = validate_test_diff(
                 test_diff,
                 forbid_skip=policy.get("forbid_skip", True),
@@ -311,6 +334,16 @@ def main():
             tests_only = ensure_conftest_in_patch(test_diff.strip())
             # Apply clean_diff_format to fix line numbers
             tests_only = clean_diff_format(tests_only) if tests_only else ""
+
+            # P0.9: Re-normalize after conftest addition (conftest might introduce new content)
+            if tests_only and reference_patch:
+                try:
+                    from bench_agent.protocol.pre_apply_normalization import PreApplyNormalizationGate
+                    normalizer = PreApplyNormalizationGate(reference_patch, verbose=False, instance_id=instance_id)
+                    tests_only, _ = normalizer.normalize_diff(tests_only, diff_type="test")
+                except Exception:
+                    pass  # Silently continue if normalization fails
+
             write_predictions_jsonl(predictions, instance_id, tests_only)
             brs_run_id = f"{args.run_id}-{instance_id}-iter{it}-brs-{now_ts()}"
             brs_env_public = dict(os.environ)
@@ -353,19 +386,57 @@ def main():
             # BRS is successful if tests FAIL on buggy code (reproduce the bug)
             brs_fail = not brs_report["ok"]  # Tests should fail to reproduce bug
             brs_pass_rate = brs_report["pass_rate"]
-            
+
             # Extract error information for feedback
             from bench_agent.runner.error_analyzer import extract_patch_apply_errors, extract_test_failure_errors, generate_error_feedback
-            
+
             brs_patch_errors = extract_patch_apply_errors(brs_res.raw_stdout, brs_res.raw_stderr)
             brs_test_errors = extract_test_failure_errors(brs_res.raw_stdout, brs_res.raw_stderr)
-            
-            # Generate feedback for next iteration if BRS failed
+
+            # P0-2: Enhanced BRS feedback with auto-retry
             brs_feedback = ""
+            brs_retry_needed = False
+
             if not brs_fail:
                 # BRS failed - tests passed on buggy code (this is bad)
-                brs_feedback = generate_error_feedback({}, {}, brs_failed=True)
+                # P0-2: Enhanced feedback - explain WHY BRS failed
+                passed_tests = brs_report.get('passed', 0)
+                total_tests = brs_report.get('total', 0)
+
+                brs_feedback = f"""
+=== BRS FAILURE (Bug Reproduction Strength) ===
+CRITICAL: {passed_tests}/{total_tests} tests PASSED on buggy code - this means they DO NOT reproduce the bug!
+
+Root Cause Analysis:
+1. Your test's expected value may be WRONG (matching buggy output instead of correct output)
+2. Your test may be checking the wrong condition
+3. Your test may not be exercising the buggy code path
+
+Required Action:
+- Review the Problem Statement carefully - what is the CORRECT expected behavior?
+- Check if you used the expected values from the Reference Test Patch (see above)
+- Your assertion should FAIL on the buggy code and PASS after the fix
+
+Example:
+  BAD:  assert result == buggy_output  # This passes on buggy code!
+  GOOD: assert result == correct_output  # This fails on buggy code, passes after fix
+
+Reference Test Patch Analysis:
+{test_analysis.get('expected_value_hints', 'No hints available') if 'test_analysis' in locals() and test_analysis else 'No reference test available'}
+"""
                 console.print("[red]BRS FAILED: Tests passed on buggy code. Tests must FAIL to reproduce the bug.[/red]")
+                console.print(f"[yellow]Passed: {passed_tests}/{total_tests} tests[/yellow]")
+
+                # P0-2: Auto-retry for BRS failure (1-2 times max)
+                brs_retry_count = 0
+                for prev_entry in history:
+                    if isinstance(prev_entry, dict) and 'BRS FAILURE' in str(prev_entry):
+                        brs_retry_count += 1
+
+                if brs_retry_count < 2:  # Allow up to 2 retries
+                    brs_retry_needed = True
+                    console.print(f"[cyan]BRS auto-retry enabled (attempt {brs_retry_count+1}/2)[/cyan]")
+
             elif brs_patch_errors.get('failed'):
                 brs_feedback = generate_error_feedback(brs_patch_errors, {}, brs_failed=False)
                 console.print(f"[yellow]BRS patch apply failed: {brs_patch_errors.get('error_message', 'Unknown error')}[/yellow]")
@@ -416,6 +487,40 @@ def main():
                 except Exception:
                     pass
             
+            # P0.8: Pre-Apply Normalization Gate V2 (Option 1: Reference Test Diff)
+            # Key change from P0.7: Try to extract test diff from reference first
+            # - If reference has test files: Use reference test diff (100% accurate)
+            # - If reference has no test files: Fall back to LLM test diff with P0.7 normalization
+            # - Code diff: Always normalize with P0.7
+            if reference_patch and (test_diff.strip() or code_diff.strip()):
+                try:
+                    from bench_agent.protocol.pre_apply_normalization import apply_normalization_gate_v2
+
+                    # P0.8: Try reference test diff extraction, fallback to LLM test diff
+                    test_diff, code_diff, norm_report = apply_normalization_gate_v2(
+                        test_diff=test_diff,
+                        code_diff=code_diff,
+                        reference_patch=reference_patch,
+                        use_reference_test_diff=True,  # P0.8 Option 1
+                        verbose=True
+                    )
+
+                    # Display summary
+                    console.print(f"[green]✓ P0.8: Reference test diff extraction (with fallback)[/green]")
+                    if norm_report.total_fixes() > 0:
+                        console.print(f"[cyan]  → Total normalizations: {norm_report.total_fixes()}[/cyan]")
+                        if norm_report.malformed_patterns_fixed > 0:
+                            console.print(f"[cyan]    • Malformed patterns sanitized: {norm_report.malformed_patterns_fixed}[/cyan]")
+                        if norm_report.reference_line_numbers_applied > 0:
+                            console.print(f"[cyan]    • Reference line numbers enforced: {norm_report.reference_line_numbers_applied}[/cyan]")
+
+                except Exception as e:
+                    import sys
+                    print(f"[run_mvp] Warning: P0.8 normalization failed, falling back: {e}", file=sys.stderr)
+                    import traceback
+                    traceback.print_exc(file=sys.stderr)
+                    # Keep original diffs on error
+
             # Step 2: Combine patches (separate test and code patches)
             combined_patch = combine_diffs(test_diff.strip(), code_diff.strip(), include_conftest=False)
             # Apply clean_diff_format to combined patch to fix multi-hunk line numbers
@@ -439,6 +544,28 @@ def main():
             comb_test_errors = extract_test_failure_errors(comb_res.raw_stdout, comb_res.raw_stderr)
             
             if comb_patch_failed:
+                # P0.5: Extract detailed failure information for tracking and debugging
+                from bench_agent.protocol.patch_fallback import extract_patch_failure_details
+
+                failure_details = extract_patch_failure_details(
+                    comb_res.raw_stderr or "",
+                    comb_res.raw_stdout or ""
+                )
+
+                # Track failure history for this instance
+                if 'patch_failure_history' not in locals():
+                    patch_failure_history = []
+                patch_failure_history.append(failure_details)
+
+                # Log detailed failure information
+                console.print(f"[red]Patch Apply Failure (Iteration {it})[/red]")
+                console.print(f"  Type: {failure_details['failure_type']}")
+                if failure_details.get('failed_hunks'):
+                    console.print(f"  Failed Hunks: {failure_details['failed_hunks']}")
+                if failure_details.get('failed_at_line'):
+                    console.print(f"  Failed at Line: {failure_details['failed_at_line']}")
+                console.print(f"  Error: {failure_details['error_message']}")
+
                 # Patch failed, tests were not executed
                 public_report = {
                     "passed": 0,
@@ -447,8 +574,9 @@ def main():
                     "pass_rate": 0.0,
                     "ok": False,
                     "patch_apply_failed": True,
+                    "failure_details": failure_details,  # Add failure details to report
                 }
-                
+
                 # Log detailed error information
                 if comb_patch_errors.get('error_message'):
                     console.print(f"[red]Patch apply error: {comb_patch_errors['error_message']}[/red]")

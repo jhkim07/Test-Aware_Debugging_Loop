@@ -8,14 +8,22 @@ from typing import List, Tuple
 def _calculate_actual_hunk_counts(lines: List[str], hunk_start_idx: int) -> Tuple[int, int]:
     """
     Calculate actual old_count and new_count by analyzing hunk content.
-    
+
     Returns:
         (actual_old_count, actual_new_count)
+
+    Key rules for unified diff format:
+    - Lines starting with ' ' (space) are context lines (present in both old and new)
+    - Lines starting with '-' are removed from old file
+    - Lines starting with '+' are added to new file
+    - Empty lines in diff are represented as ' ' (space only)
+    - old_count = context_lines + removed_lines
+    - new_count = context_lines + added_lines
     """
     added = 0
     removed = 0
     context = 0
-    
+
     i = hunk_start_idx + 1
     while i < len(lines):
         line = lines[i]
@@ -25,19 +33,26 @@ def _calculate_actual_hunk_counts(lines: List[str], hunk_start_idx: int) -> Tupl
         if line.startswith('+++') or line.startswith('---'):
             i += 1
             continue
-        
+
         if line.startswith('+') and not line.startswith('+++'):
             added += 1
         elif line.startswith('-') and not line.startswith('---'):
             removed += 1
-        elif line.strip():  # Non-empty context line
+        elif line.startswith(' '):
+            # Context line: must start with space (proper diff format)
+            # Empty lines in unified diff are represented as ' ' (single space), not ''
             context += 1
-        
+        elif line and not line.startswith('\\'):
+            # Lines that don't start with +, -, \, or space are likely context lines
+            # with their leading space stripped (improper format, but handle gracefully)
+            # BUT: skip truly empty lines ('') as they're not part of the diff content
+            context += 1
+
         i += 1
-    
+
     actual_old_count = removed + context
     actual_new_count = added + context
-    
+
     return actual_old_count, actual_new_count
 
 
@@ -121,10 +136,11 @@ def fix_multihunk_line_numbers(diff_text: str) -> str:
                 last_hunk = hunks_in_file[-1]
                 last_old_start = last_hunk[0]
                 last_old_count = last_hunk[1]
-                last_old_end = last_old_start + last_old_count
+                # Fix: hunk range is inclusive [start, start+count-1], so end is exclusive
+                last_old_end = last_old_start + last_old_count  # This is the line AFTER the last affected line
                 last_new_start = last_hunk[2]
                 last_new_count = last_hunk[3]
-                last_new_end = last_new_start + last_new_count
+                last_new_end = last_new_start + last_new_count  # This is the line AFTER the last affected line
                 
                 # Calculate the gap between hunks in the old file
                 if old_start >= last_old_end:
