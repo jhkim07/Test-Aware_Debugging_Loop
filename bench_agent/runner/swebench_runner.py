@@ -42,8 +42,11 @@ def run_swebench_eval(
     intermediate_dir.mkdir(parents=True, exist_ok=True)
     
     p = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=Path.cwd())
-    # Harness writes reports under ./runs/<run_id>/ by default (see swebench docs; adjust if needed)
-    report_dir = Path("runs") / run_id
+    # Harness writes reports under ./logs/run_evaluation/<run_id>/ (SWE-bench default)
+    # First try logs/run_evaluation, fallback to runs if not found
+    report_dir_new = Path("logs/run_evaluation") / run_id
+    report_dir_old = Path("runs") / run_id
+    report_dir = report_dir_new if report_dir_new.exists() else report_dir_old
     ok = (p.returncode == 0)
     
     # Move test-aware-debugging.* files to intermediate_files directory
