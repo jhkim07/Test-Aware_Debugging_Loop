@@ -12,7 +12,7 @@ limits:
 
 llm:
   enabled: true
-  model: gpt-4o
+  model: gpt-4o-mini
 
 policy:
   forbid_skip: true
