@@ -1,0 +1,13 @@
+```json
+{
+  "focus": "tests",
+  "hypotheses": [
+    "The ascii.qdp reader function in the astropy library is not handling QDP commands in a case-insensitive manner, leading to a ValueError when commands are in lowercase.",
+    "The test suite for the ascii.qdp format does not include cases where QDP commands are in lowercase, which is why this issue was not caught."
+  ],
+  "targets": [
+    "ascii.qdp reader function in the astropy library",
+    "Test cases for the ascii.qdp format in the astropy library"
+  ]
+}
+```

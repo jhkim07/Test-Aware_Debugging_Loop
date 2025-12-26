@@ -1,0 +1,34 @@
+```diff
+diff --git a/sympy/core/tests/test_symbol.py b/sympy/core/tests/test_symbol.py
+index 1234567..89abcde 100644
+--- a/sympy/core/tests/test_symbol.py
++++ b/sympy/core/tests/test_symbol.py
+@@ -0,0 +1,15 @@
++from sympy import Symbol
++from pytest import raises
++
++# Test to ensure Symbol instances do not have a __dict__ attribute
++# This reproduces the bug where Symbol instances incorrectly have a __dict__
++def test_symbol_no_dict():
++    s = Symbol('s')
++    assert not hasattr(s, '__dict__')
++    with raises(AttributeError):
++        s.x = 1
++
++def test_symbol_slots():
++    s = Symbol('s')
++    assert s.__slots__ == ('name',)
++
+diff --git a/.ta_split.json b/.ta_split.json
+index 1234567..89abcde 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -1 +1,5 @@
+-{}
++{
++    "public": [
++        "sympy/core/tests/test_symbol.py::test_symbol_no_dict"
++    ],
++    "hidden": []
++}
+```

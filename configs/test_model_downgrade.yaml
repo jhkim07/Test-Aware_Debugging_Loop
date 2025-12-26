@@ -1,0 +1,26 @@
+# Test configuration to verify gpt-4o-mini downgrade
+# Goal: Confirm that gpt-4o-mini maintains/improves performance
+
+run_id: "model-downgrade-test"
+dataset: "princeton-nlp/SWE-bench_Lite"
+
+limits:
+  max_iters: 8
+  time_limit_minutes: 30
+
+instances:
+  - astropy__astropy-12907  # Perfect with gpt-4o-mini (99.38%)
+  - sympy__sympy-20590      # Perfect with gpt-4o-mini (99.38%)
+  - astropy__astropy-14182  # Perfect with gpt-4o-mini (99.38%)
+  - astropy__astropy-14365  # Failed with policy violation (0%)
+
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.0
+  max_tokens: 16000
+
+expected_results:
+  success_rate: "75% (3/4) - same as P0.9 baseline"
+  brs_score: "100% (3/3 passing cases)"
+  note: "astropy-14365 will still fail due to file I/O policy (not model issue)"

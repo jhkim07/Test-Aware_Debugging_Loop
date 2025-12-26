@@ -314,19 +314,89 @@ def main():
                 except Exception as e:
                     console.print(f"[yellow]Warning: Test diff normalization failed: {e}[/yellow]")
 
-            ok, issues = validate_test_diff(
-                test_diff,
-                forbid_skip=policy.get("forbid_skip", True),
-                forbid_xfail=policy.get("forbid_xfail", True),
-                forbid_network=policy.get("forbid_network", True),
-                restrict_file_io=policy.get("restrict_file_io", True),
-            )
-            if not ok:
-                console.print("[red]Test diff rejected by policy:[/red]")
+            # P0.9.1: Policy validation with auto-retry (Phase 1)
+            # Instead of immediately failing, retry Test Author 1-2 times with specific feedback
+            MAX_POLICY_RETRIES = 2
+            policy_retry_count = 0
+            policy_validation_passed = False
+
+            while policy_retry_count <= MAX_POLICY_RETRIES:
+                ok, issues = validate_test_diff(
+                    test_diff,
+                    forbid_skip=policy.get("forbid_skip", True),
+                    forbid_xfail=policy.get("forbid_xfail", True),
+                    forbid_network=policy.get("forbid_network", True),
+                    restrict_file_io=policy.get("restrict_file_io", True),
+                )
+
+                if ok:
+                    policy_validation_passed = True
+                    break
+
+                # Policy violation detected
+                console.print(f"[yellow]Test diff rejected by policy (attempt {policy_retry_count+1}/{MAX_POLICY_RETRIES+1}):[/yellow]")
                 for i in issues: console.print(f" - {i}")
-                # Record and continue: In MVP we stop to avoid unsafe eval
-                write_jsonl(log_path, {"iter": it, "stage": "test_policy_reject", "issues": issues})
-                break
+
+                if policy_retry_count >= MAX_POLICY_RETRIES:
+                    # Max retries reached, give up
+                    console.print("[red]Max policy validation retries reached. Stopping.[/red]")
+                    write_jsonl(log_path, {"iter": it, "stage": "test_policy_reject", "issues": issues, "retries": policy_retry_count})
+                    break
+
+                # Generate specific corrective feedback based on violation type
+                corrective_feedback = []
+                for issue in issues:
+                    if "file I/O" in issue or "open(" in issue:
+                        corrective_feedback.append(
+                            "POLICY VIOLATION: Your test contains file I/O operations that are not allowed.\n"
+                            "REQUIRED FIX: Use pytest's tmp_path fixture for all file operations.\n"
+                            "SAFE PATTERNS:\n"
+                            "  - def test_example(tmp_path):  # Add tmp_path parameter\n"
+                            "  - path = tmp_path / 'file.txt'  # Create path under tmp_path\n"
+                            "  - path.write_text('content')   # Use write_text method\n"
+                            "  - content = path.read_text()   # Use read_text method\n"
+                            "FORBIDDEN PATTERNS:\n"
+                            "  - open(...) - DO NOT use open() function\n"
+                            "  - Path.open() - DO NOT use Path.open() method\n"
+                            "Output ONLY the corrected unified diff format."
+                        )
+                    elif "network" in issue:
+                        corrective_feedback.append(
+                            "POLICY VIOLATION: Network I/O is not allowed in tests.\n"
+                            "Remove all requests, urllib, socket, httpx calls."
+                        )
+                    elif "skip" in issue or "xfail" in issue:
+                        corrective_feedback.append(
+                            "POLICY VIOLATION: Tests must not use pytest.skip or pytest.xfail.\n"
+                            "Tests must actually run and verify the bug fix."
+                        )
+
+                # Retry Test Author with corrective feedback
+                console.print(f"[cyan]Retrying Test Author with corrective feedback...[/cyan]")
+                policy_retry_count += 1
+
+                # Regenerate test with feedback
+                test_diff = create_tests(
+                    client, model, repo_ctx, failure,
+                    reference_test_patch=reference_test_patch,
+                    reference_test_analysis=test_analysis,
+                    current_tests_hint="\n".join(corrective_feedback),  # Add corrective feedback
+                    expected_value_hints=expected_value_hints
+                ) if client else ""
+                test_diff = clean_diff_format(test_diff) if test_diff else ""
+
+                # Re-normalize after regeneration
+                if test_diff and reference_patch:
+                    try:
+                        from bench_agent.protocol.pre_apply_normalization import PreApplyNormalizationGate
+                        normalizer = PreApplyNormalizationGate(reference_patch, verbose=False, instance_id=instance_id)
+                        test_diff, test_norm_report = normalizer.normalize_diff(test_diff, diff_type="test")
+                    except Exception:
+                        pass
+
+            # Check if validation ultimately passed
+            if not policy_validation_passed:
+                break  # Exit iteration loop if policy validation failed after all retries
 
             # BRS (Bug Reproduction Strength):
             # - run with tests-only patch (to check it fails on buggy code)

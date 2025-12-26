@@ -1,0 +1,47 @@
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+index 3c4f5a2..b7e8d3f 100644
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -81,5 +81,19 @@
+     path2 = str(tmp_path / "test2.qdp")
+
++def test_lowercase_qdp_commands(tmp_path):
++    """
++    Test that QDP files with lowercase commands are read correctly.
++    This addresses the issue where commands were expected to be uppercase.
++    """
++    qdp_content = "read serr 1 2\n1 0.5 1 0.5\n"
++    path = tmp_path / "lowercase.qdp"
++    path.write_text(qdp_content)
++
++    table = Table.read(path, format='ascii.qdp')
++    assert len(table) == 1
++
++{
+    "public": [
+        "astropy/io/ascii/tests/test_qdp.py::test_lowercase_qdp_commands"
+    ],
+    "hidden": []
++}
+
+diff --git a/astropy/io/ascii/qdp.py b/astropy/io/ascii/qdp.py
+index 3c4f5a2..b7e8d3f 100644
+--- a/astropy/io/ascii/qdp.py
++++ b/astropy/io/ascii/qdp.py
+@@ -68,7 +68,7 @@
+     _new_re = rf"NO({sep}NO)+"
+     _data_re = rf"({_decimal_re}|NO|[-+]?nan)({sep}({_decimal_re}|NO|[-+]?nan))*)"
+     _type_re = rf"^\s*((?P<command>{_command_re})|(?P<new>{_new_re})|(?P<data>{_data_re})?\s*(\!(?P<comment>.*))?\s*$"
+-    _line_type_re = re.compile(_type_re)
++    _line_type_re = re.compile(_type_re, re.IGNORECASE)
+     line = line.strip()
+     if not line:
+         return "comment"
+@@ -306,6 +306,6 @@
+             values = []
+             for v in line.split(delimiter):
+-                if v == "NO":
++                if v.upper() == "NO":
+                     values.append(np.ma.masked)
+                 else:
+                     # Understand if number is int or float

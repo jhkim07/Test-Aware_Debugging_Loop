@@ -1,0 +1,42 @@
+# P0.9.1 Regression Test Configuration
+# Verify that Phase 1 (auto-retry) doesn't break existing perfect scores
+# Critical: BRS must remain 100% on passing instances
+
+run_id: "p091-regression-test"
+dataset: "princeton-nlp/SWE-bench_Lite"
+
+limits:
+  max_iters: 8
+  time_limit_minutes: 30
+
+instances:
+  # P0.9 perfect scores (must maintain):
+  - astropy__astropy-12907   # BRS: 1.0, Overall: 0.9938
+  - sympy__sympy-20590       # BRS: 1.0, Overall: 0.9938
+  - astropy__astropy-14182   # BRS: 1.0, Overall: 0.9938
+
+  # P0.9.1 target (should improve):
+  - astropy__astropy-14365   # BRS: 0.0 → 1.0, Overall: 0.0 → 0.99
+
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.0
+  max_tokens: 16000
+
+# Regression Acceptance Criteria:
+# PASS: All 4 instances succeed with BRS=1.0
+# PARTIAL: 3/4 succeed (14365 still fails, but no regression)
+# FAIL: Any of 12907/20590/14182 regress (BRS drops from 1.0)
+
+expected_p091_results:
+  success_rate: "100% (4/4)"  # Up from 75%
+  average_brs: "1.0"          # Maintained
+  average_overall: "~0.99"    # Up from 0.7453
+
+  # Key metric: No regression on existing perfect scores
+  regression_check:
+    - "12907: BRS=1.0, Overall>0.99"
+    - "20590: BRS=1.0, Overall>0.99"
+    - "14182: BRS=1.0, Overall>0.99"
+    - "14365: BRS=1.0, Overall>0.99 (NEW!)"

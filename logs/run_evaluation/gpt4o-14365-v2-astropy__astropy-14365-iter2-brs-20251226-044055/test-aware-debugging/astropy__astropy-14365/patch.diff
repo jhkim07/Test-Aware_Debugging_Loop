@@ -1,0 +1,38 @@
+--- /dev/null
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+index 1234567..89abcde 100644
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -90,3 +90,21 @@
+     path2 = str(tmp_path / "test2.qdp")
+     table = Table.read(path, format='ascii.qdp')
+     table.write(path2, format='ascii.qdp')
++
++
++def test_lowercase_qdp_commands(tmp_path):
++    """
++    Test that QDP files with lowercase commands are read correctly.
++    This addresses the issue where commands were assumed to be uppercase.
++    """
++    qdp_content = "read serr 1 2\n1 0.5 1 0.5\n"
++    path = tmp_path / "lowercase_test.qdp"
++    path.write_text(qdp_content)
++
++    # Attempt to read the QDP file
++    table = Table.read(path, format='ascii.qdp')
++
++    # Check that the table was read correctly
++    assert len(table) == 1
++    assert table['col1'][0] == 1
++    assert table['col2'][0] == 0.5
+diff --git a/.ta_split.json b/.ta_split.json
+index 1234567..89abcde 100644
+--- a/.ta_split.json
++++ b/.ta_split.json
+@@ -1,4 +1,4 @@
+ {
+-    "public": [],
+-    "hidden": []
++    "public": ["astropy/io/ascii/tests/test_qdp.py::test_lowercase_qdp_commands"],
++    "hidden": ["astropy/io/ascii/tests/test_qdp.py::test_roundtrip"]
+ }
