@@ -438,22 +438,16 @@ def main():
                 # Parse report for accurate BRS measurement
                 # Priority: report files > stdout/stderr > return code
                 # Report files are more reliable for SWE-bench harness
-                console.print(f"[magenta]DEBUG: brs_res.report_dir={brs_res.report_dir}, instance_id={instance_id}[/magenta]")
-                console.print(f"[magenta]DEBUG: report_dir exists={brs_res.report_dir.exists() if hasattr(brs_res.report_dir, 'exists') else 'N/A'}[/magenta]")
-                brs_report = parse_harness_report(brs_res.report_dir, instance_id, debug=True)
-                console.print(f"[cyan]DEBUG: BRS report from parse_harness_report: {brs_report}[/cyan]")
+                brs_report = parse_harness_report(brs_res.report_dir, instance_id, debug=False)
 
                 # If report parsing failed, try stdout/stderr
                 if brs_report["total"] == 0:
-                    console.print("[yellow]DEBUG: BRS report total=0, trying stdout/stderr[/yellow]")
                     brs_stdout = parse_pytest_output(brs_res.raw_stdout)
                     brs_stderr = parse_pytest_output(brs_res.raw_stderr)
                     brs_report = brs_stdout if brs_stdout["total"] > 0 else brs_stderr
-                    console.print(f"[cyan]DEBUG: BRS report from stdout/stderr: {brs_report}[/cyan]")
 
                 # Final fallback: return code
                 if brs_report["total"] == 0:
-                    console.print(f"[yellow]DEBUG: BRS report still total=0, using return code. brs_res.ok={brs_res.ok}[/yellow]")
                     brs_report["ok"] = brs_res.ok
                     brs_report["pass_rate"] = 1.0 if brs_res.ok else 0.0
 
@@ -463,7 +457,6 @@ def main():
             # BRS is successful if tests FAIL on buggy code (reproduce the bug)
             brs_fail = not brs_report["ok"]  # Tests should fail to reproduce bug
             brs_pass_rate = brs_report["pass_rate"]
-            console.print(f"[green]DEBUG: Final BRS - fail={brs_fail}, pass_rate={brs_pass_rate}, report={brs_report}[/green]")
 
             # Extract error information for feedback
             from bench_agent.runner.error_analyzer import extract_patch_apply_errors, extract_test_failure_errors, generate_error_feedback
