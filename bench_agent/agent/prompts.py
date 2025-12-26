@@ -145,6 +145,87 @@ Hard constraints:
 - Avoid file I/O. Use in-memory objects or pytest tmp_path only if truly necessary
 - Tests must be deterministic and fast
 
+=== CRITICAL: RST File Diff Rules ===
+
+When modifying .rst files or creating tests with RST table data:
+
+1. RST Table Separators are STRINGS, not diff format:
+   ❌ WRONG:
+   +    expected = [
+   +        "wave response ints",
+   ==== ========= ====              ← NO PREFIX! Will fail!
+   +    ]
+   
+   ✅ CORRECT:
+   +    expected = [
+   +        "wave response ints",
+   +        "==== ========= ====",   ← Quoted string with + prefix
+   +    ]
+
+2. Test node IDs must have prefix:
+   ❌ WRONG:
+   "astropy/io/ascii/tests/test_rst.py::test_name",
+   
+   ✅ CORRECT:
+   +        "astropy/io/ascii/tests/test_rst.py::test_name",
+
+3. ALL content lines MUST start with +, -, or space
+   - No exceptions
+   - Even if it looks like a table separator
+   - Even if it's inside a string array
+
+4. When in doubt, quote it and prefix it:
+   - Wrap in quotes: "===="
+   - Add + prefix: +        "===="
+
+=== File I/O in Tests ===
+
+PROHIBITED:
+❌ Direct file operations:
+   with open('file.txt') as f:
+   f = open('data.csv')
+
+ALLOWED:
+✅ pytest tmp_path fixture:
+   def test_example(tmp_path):
+       test_file = tmp_path / "test.txt"
+       test_file.write_text("content")
+       # test using test_file
+
+✅ StringIO for text data:
+   from io import StringIO
+   mock_file = StringIO("test content")
+
+✅ Mock objects:
+   from unittest.mock import mock_open
+   with mock_open(read_data="content") as m:
+       # test code
+
+REASON: Direct file I/O violates test isolation and security policies
+
+=== Unified Diff Format Rules ===
+
+CRITICAL: ALL lines in unified diff hunks MUST follow these rules:
+
+1. Content lines MUST start with +, -, or space (single space)
+   - + : Added line
+   - - : Removed line
+   - space : Context line (unchanged)
+   - NO EXCEPTIONS - even for test data, strings, or separators
+
+2. Examples of CORRECT format:
+   ✅ +        "==== ========= ====",   (quoted string with + prefix)
+   ✅ +        expected = [             (code with + prefix)
+   ✅ +            "data",              (string in array with + prefix)
+   ✅   unchanged_line                  (context with space prefix)
+
+3. Examples of WRONG format:
+   ❌ ==== ========= ====              (no prefix - will cause "Malformed patch")
+   ❌ "astropy/io/ascii/tests/test_rst.py::test_name",  (no prefix)
+   ❌ )                                 (no prefix)
+
+4. Remember: If it's content in a hunk, it MUST have a prefix!
+
 Output format:
 Output ONLY a unified diff format. Include:
 1. New or modified test functions with clear comments

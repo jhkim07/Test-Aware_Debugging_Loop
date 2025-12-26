@@ -1,0 +1,28 @@
+```diff
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -43,7 +43,18 @@ def test_get_tables_from_qdp_file(tmp_path):
+     assert np.isclose(table2["MJD_nerr"][0], -2.37847222222222e-05)
+ 
++@pytest.mark.parametrize("lowercase", [False, True])
++def test_read_lowercase_qdp(tmp_path, lowercase):
++    """Test reading a QDP file with lowercase commands."""
++    qdp_content = """
++    read serr 1 2 
++    1 0.5 1 0.5
++    """
++    if lowercase:
++        qdp_content = qdp_content.lower()
++
++    path = str(tmp_path / "test.qdp")
++    with open(path, 'w') as f:
++        f.write(qdp_content)
++
++    table = Table.read(path, format='ascii.qdp')
++    assert table is not None  # Ensure the table is read successfully
++
+ def lowercase_header(value):
+     """Make every non-comment line lower case."""
+     lines = []
+```

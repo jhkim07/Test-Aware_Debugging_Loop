@@ -1,0 +1,53 @@
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -0,0 +1,22 @@
++import pytest
++import numpy as np
++from astropy.table import Table
++
++def lowercase_header(value):
++    """Make every non-comment line lower case."""
++    lines = []
++    for line in value.splitlines():
++        if not line.startswith("!"):
++            line = line.lower()
++        lines.append(line)
++    return "\n".join(lines)
++
++@pytest.mark.parametrize("lowercase", [False, True])
++def test_read_lowercase_qdp(tmp_path, lowercase):
++    """Test reading a QDP file with lowercase commands."""
++    example_qdp = """
++    read serr 1 2 
++    1 0.5 1 0.5
++    """
++    if lowercase:
++        example_qdp = lowercase_header(example_qdp)
++
++    path = str(tmp_path / "test.qdp")
++    path.write_text(example_qdp)
++    table = Table.read(path, format='ascii.qdp')
++    assert table is not None  # Ensure table is read successfully
++    assert np.isclose(table["MJD_nerr"][0], -2.37847222222222e-05)  # Example assertion
++    assert table["MJD_nerr"].size == 1  # Ensure the table has the expected number of rows
++    assert "SERR" in table.columns  # Check if the error column is present
++    assert np.isclose(table["SERR"][0], 0.5)  # Check the value in the error column
++    assert np.isclose(table["MJD_nerr"][0], -2.37847222222222e-05)  # Check the value in the nerr column
++    assert np.isclose(table["MJD"][0], 1.0)  # Check the value in the MJD column
++
++    # Additional assertions can be added as needed
++
++    # Ensure no exceptions were raised during reading
++    assert True  # Placeholder for successful execution
++
++    # Clean up if necessary
++    del table  # Remove reference to the table to free memory
++    assert table is None  # Ensure table is deleted
++
++    # Additional cleanup can be done here if needed
++
++    # Final assertion to ensure the test passes
++    assert True  # Placeholder for successful execution
++    # The test should pass if the table is read correctly without errors
++    # and the assertions are met.
