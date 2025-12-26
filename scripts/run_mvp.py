@@ -315,12 +315,13 @@ def main():
                     console.print(f"[yellow]Warning: Test diff normalization failed: {e}[/yellow]")
 
             # P0.9.1: Policy validation with auto-retry (Phase 1)
-            # Instead of immediately failing, retry Test Author 1-2 times with specific feedback
+            # Instead of immediately failing, retry Test Author up to 2 times with specific feedback
+            # Total attempts: 3 (initial + 2 retries)
             MAX_POLICY_RETRIES = 2
-            policy_retry_count = 0
+            policy_attempt = 0
             policy_validation_passed = False
 
-            while policy_retry_count <= MAX_POLICY_RETRIES:
+            while policy_attempt <= MAX_POLICY_RETRIES:
                 ok, issues = validate_test_diff(
                     test_diff,
                     forbid_skip=policy.get("forbid_skip", True),
@@ -334,13 +335,13 @@ def main():
                     break
 
                 # Policy violation detected
-                console.print(f"[yellow]Test diff rejected by policy (attempt {policy_retry_count+1}/{MAX_POLICY_RETRIES+1}):[/yellow]")
+                console.print(f"[yellow]Test diff rejected by policy (attempt {policy_attempt+1}/{MAX_POLICY_RETRIES+1}):[/yellow]")
                 for i in issues: console.print(f" - {i}")
 
-                if policy_retry_count >= MAX_POLICY_RETRIES:
-                    # Max retries reached, give up
-                    console.print("[red]Max policy validation retries reached. Stopping.[/red]")
-                    write_jsonl(log_path, {"iter": it, "stage": "test_policy_reject", "issues": issues, "retries": policy_retry_count})
+                if policy_attempt >= MAX_POLICY_RETRIES:
+                    # Max attempts reached, give up
+                    console.print("[red]Max policy validation attempts reached. Stopping.[/red]")
+                    write_jsonl(log_path, {"iter": it, "stage": "test_policy_reject", "issues": issues, "attempts": policy_attempt+1})
                     break
 
                 # Generate specific corrective feedback based on violation type
@@ -373,14 +374,13 @@ def main():
 
                 # Retry Test Author with corrective feedback
                 console.print(f"[cyan]Retrying Test Author with corrective feedback...[/cyan]")
-                policy_retry_count += 1
+                policy_attempt += 1
 
                 # Regenerate test with feedback
-                test_diff = create_tests(
+                test_diff = propose_tests(
                     client, model, repo_ctx, failure,
-                    reference_test_patch=reference_test_patch,
-                    reference_test_analysis=test_analysis,
                     current_tests_hint="\n".join(corrective_feedback),  # Add corrective feedback
+                    previous_feedback="",  # Clear previous feedback, use corrective feedback instead
                     expected_value_hints=expected_value_hints
                 ) if client else ""
                 test_diff = clean_diff_format(test_diff) if test_diff else ""
