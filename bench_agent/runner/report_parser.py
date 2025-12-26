@@ -150,7 +150,31 @@ def parse_harness_report(report_dir: Path, instance_id: str, debug: bool = False
                             if debug:
                                 print(f"Found instance results in {report_file.name}: {result}")
                             return result
-                    
+
+                        # Pattern 2b: SWE-bench tests_status format
+                        if isinstance(inst_data, dict) and "tests_status" in inst_data:
+                            tests_status = inst_data["tests_status"]
+                            passed = 0
+                            failed = 0
+
+                            # Count from all test categories
+                            for category in ["FAIL_TO_PASS", "PASS_TO_PASS", "FAIL_TO_FAIL", "PASS_TO_FAIL"]:
+                                if category in tests_status:
+                                    cat_data = tests_status[category]
+                                    if isinstance(cat_data, dict):
+                                        passed += len(cat_data.get("success", []))
+                                        failed += len(cat_data.get("failure", []))
+
+                            result["passed"] = passed
+                            result["failed"] = failed
+                            result["total"] = passed + failed
+                            if result["total"] > 0:
+                                result["pass_rate"] = passed / result["total"]
+                            result["ok"] = inst_data.get("resolved", False)  # Use SWE-bench 'resolved' field
+                            if debug:
+                                print(f"Found SWE-bench tests_status in {report_file.name}: {result}")
+                            return result
+
                     # Pattern 3: Nested structures
                     for key, value in data.items():
                         if isinstance(value, dict) and "passed" in value and "failed" in value:
@@ -186,13 +210,13 @@ def parse_harness_report(report_dir: Path, instance_id: str, debug: bool = False
 def parse_pytest_output(text: str) -> dict:
     """
     Parse pytest output text to extract test results.
-    
+
     Supports multiple pytest output formats:
     - "X passed, Y failed"
     - "X passed in Y.YYs"
     - "X failed in Y.YYs"
     - Summary lines with test counts
-    
+
     Returns:
         dict with passed, failed, total, pass_rate, ok
     """
@@ -203,20 +227,25 @@ def parse_pytest_output(text: str) -> dict:
         "pass_rate": 0.0,
         "ok": False,
     }
-    
+
     if not text:
         return result
-    
+
+    # Remove ANSI escape codes for cleaner parsing
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    text = ansi_escape.sub('', text)
+
     # Comprehensive patterns for pytest output
+    # IMPORTANT: Order matters! More specific patterns must come first
     patterns = [
+        # "X failed, Y passed in Zs" - MUST come before "X passed, Y failed"
+        (r"(\d+)\s+failed(?:,\s*(\d+)\s+passed)?(?:\s+in\s+[\d.]+s)?", False, True),
         # "X passed, Y failed in Zs"
         (r"(\d+)\s+passed(?:,\s*(\d+)\s+failed)?(?:\s+in\s+[\d.]+s)?", True, False),
-        # "X failed, Y passed in Zs"
-        (r"(\d+)\s+failed(?:,\s*(\d+)\s+passed)?(?:\s+in\s+[\d.]+s)?", False, True),
+        # "X failed in Ys" - MUST come before "X passed"
+        (r"(\d+)\s+failed(?:\s+in\s+[\d.]+s)?", False, True),
         # "X passed in Ys"
         (r"(\d+)\s+passed(?:\s+in\s+[\d.]+s)?", True, False),
-        # "X failed in Ys"
-        (r"(\d+)\s+failed(?:\s+in\s+[\d.]+s)?", False, True),
         # "tests passed" or "test passed"
         (r"(\d+)\s+test(?:s)?\s+passed", True, False),
         # Summary format: "=== X passed, Y failed ==="
@@ -245,10 +274,12 @@ def parse_pytest_output(text: str) -> dict:
                 result["ok"] = result["failed"] == 0
                 return result
     
-    # Try to count individual test outcomes
-    passed_count = len(re.findall(r"(?:PASSED|✓|PASS)", text, re.IGNORECASE))
-    failed_count = len(re.findall(r"(?:FAILED|✗|FAIL)", text, re.IGNORECASE))
-    
+    # Try to count individual test outcomes (more precise pattern)
+    # Match only actual test result lines (e.g., "PASSED test_foo.py::test_bar")
+    # Avoid matching summary lines like "1 failed, 8 passed"
+    passed_count = len(re.findall(r"^.*(?:PASSED|✓)\s+\S+::\S+", text, re.MULTILINE))
+    failed_count = len(re.findall(r"^.*(?:FAILED|✗)\s+\S+::\S+", text, re.MULTILINE))
+
     if passed_count > 0 or failed_count > 0:
         result["passed"] = passed_count
         result["failed"] = failed_count
@@ -257,6 +288,6 @@ def parse_pytest_output(text: str) -> dict:
             result["pass_rate"] = result["passed"] / result["total"]
         result["ok"] = result["failed"] == 0
         return result
-    
+
     return result
 

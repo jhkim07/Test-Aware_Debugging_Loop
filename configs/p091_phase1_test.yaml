@@ -2,21 +2,31 @@
 # Test policy violation auto-retry mechanism
 # Goal: Solve astropy-14365 without prompt changes or policy loosening
 
-run_id: "p091-phase1-auto-retry"
-dataset: "princeton-nlp/SWE-bench_Lite"
+runner:
+  mode: swebench_harness
+  dataset_name: princeton-nlp/SWE-bench_Lite
+
+instances:
+  list:
+    - astropy__astropy-14365  # File I/O policy violation - target for Phase 1
 
 limits:
   max_iters: 8
   time_limit_minutes: 30
 
-instances:
-  - astropy__astropy-14365  # File I/O policy violation - target for Phase 1
-
 llm:
-  provider: openai
+  enabled: true
   model: gpt-4o-mini  # Proven to work well for reference replication
-  temperature: 0.0
-  max_tokens: 16000
+
+policy:
+  forbid_skip: true
+  forbid_xfail: true
+  forbid_network: true
+  restrict_file_io: true
+
+split:
+  public_ratio: 0.7
+  seed: 0
 
 # Phase 1 Features:
 # - Policy violation detected → Auto-retry Test Author (max 2 retries)
@@ -24,14 +34,7 @@ llm:
 # - No prompt changes (system prompt untouched)
 # - No policy loosening (validation rules unchanged)
 
-expected_results:
-  # If Phase 1 works:
-  success_rate: "100% (1/1)"
-  brs: "1.0"
-  overall: ">0.99"
-
-  # Mechanism:
-  # 1. LLM generates test with open()
-  # 2. Policy rejects → corrective feedback
-  # 3. LLM regenerates with tmp_path
-  # 4. Policy passes → proceed to BRS/evaluation
+# Expected Results:
+# - Success rate: 100% (1/1)
+# - BRS: 1.0
+# - Overall: >0.99

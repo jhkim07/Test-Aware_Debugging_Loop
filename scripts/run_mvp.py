@@ -436,20 +436,21 @@ def main():
                 }
             else:
                 # Parse report for accurate BRS measurement
-                # Try stdout/stderr first (more reliable than report files)
-                brs_stdout = parse_pytest_output(brs_res.raw_stdout)
-                brs_stderr = parse_pytest_output(brs_res.raw_stderr)
-                brs_report = brs_stdout if brs_stdout["total"] > 0 else brs_stderr
-                
-                # If stdout/stderr parsing failed, try report files
+                # Priority: report files > stdout/stderr > return code
+                # Report files are more reliable for SWE-bench harness
+                brs_report = parse_harness_report(brs_res.report_dir, instance_id, debug=False)
+
+                # If report parsing failed, try stdout/stderr
                 if brs_report["total"] == 0:
-                    brs_report = parse_harness_report(brs_res.report_dir, instance_id, debug=False)
-                
+                    brs_stdout = parse_pytest_output(brs_res.raw_stdout)
+                    brs_stderr = parse_pytest_output(brs_res.raw_stderr)
+                    brs_report = brs_stdout if brs_stdout["total"] > 0 else brs_stderr
+
                 # Final fallback: return code
                 if brs_report["total"] == 0:
                     brs_report["ok"] = brs_res.ok
                     brs_report["pass_rate"] = 1.0 if brs_res.ok else 0.0
-                
+
                 # Ensure patch_apply_failed flag is set
                 brs_report["patch_apply_failed"] = False
             
