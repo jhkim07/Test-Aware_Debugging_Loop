@@ -253,34 +253,124 @@ def validate_diff_structure(diff_text: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
+def clean_malformed_patch_content(diff_text: str) -> Tuple[str, List[str]]:
+    """
+    P0.9.1 Phase 2: Auto-fix malformed patch content.
+
+    Removes common malformed patterns that cause patch application failures:
+    - RST table separators (==== ========= ====)
+    - Orphaned closing parentheses
+    - Lines that don't match valid diff format
+
+    Returns:
+        (cleaned_diff, removed_lines)
+    """
+    lines = diff_text.split('\n')
+    cleaned_lines = []
+    removed_lines = []
+
+    in_hunk = False
+    hunk_start_idx = -1
+
+    # Known malformed patterns to remove
+    MALFORMED_PATTERNS = [
+        r'^[\s]*={3,}[\s=]*={3,}$',  # RST table separators: ==== ========= ====
+        r'^[\s]*\)[\s]*$',            # Orphaned closing parenthesis
+        r'^[\s]*"""[\s]*,?[\s]*$',    # Orphaned docstring quotes (with optional comma)
+        r'^[\s]*",[\s]*$',            # Orphaned string ending with comma
+    ]
+
+    for i, line in enumerate(lines):
+        # Track when we're inside a hunk
+        if line.startswith('@@'):
+            in_hunk = True
+            hunk_start_idx = i
+            cleaned_lines.append(line)
+            continue
+
+        # Check if we're at a new file or end of hunk
+        if line.startswith('diff --git') or line.startswith('---') or line.startswith('+++'):
+            in_hunk = False
+            cleaned_lines.append(line)
+            continue
+
+        # If we're in a hunk, validate the line format
+        if in_hunk:
+            # Valid hunk content lines start with: ' ', '+', '-', or '\'
+            # Also allow empty lines (they should be ' ' but LLMs sometimes generate '')
+            is_valid_diff_line = (
+                line.startswith(' ') or
+                line.startswith('+') or
+                line.startswith('-') or
+                line.startswith('\\') or
+                line == ''  # Empty lines are okay
+            )
+
+            # Check against malformed patterns
+            is_malformed = False
+            for pattern in MALFORMED_PATTERNS:
+                if re.match(pattern, line):
+                    is_malformed = True
+                    removed_lines.append(f"Line {i+1}: {line}")
+                    break
+
+            if is_malformed:
+                # Skip this malformed line
+                continue
+            elif is_valid_diff_line:
+                cleaned_lines.append(line)
+            else:
+                # Line doesn't match valid diff format and isn't malformed pattern
+                # Could be context that lost its leading space - try to preserve it
+                # But log it as suspicious
+                if line.strip():  # Non-empty line
+                    # Check if it looks like code (not a separator or special char)
+                    if not re.match(r'^[\s\W]+$', line):  # Has alphanumeric content
+                        # Treat as context line (add leading space)
+                        cleaned_lines.append(' ' + line)
+                        print(f"[malformed_cleaner] Added space prefix to line {i+1}: {line[:50]}", flush=True)
+                    else:
+                        # Looks like malformed separator/special chars - remove it
+                        removed_lines.append(f"Line {i+1}: {line}")
+                else:
+                    # Empty line - keep as is
+                    cleaned_lines.append(line)
+        else:
+            # Not in a hunk - keep as is (metadata, etc.)
+            cleaned_lines.append(line)
+
+    cleaned_diff = '\n'.join(cleaned_lines)
+    return cleaned_diff, removed_lines
+
+
 def validate_patch_applicability(diff_text: str) -> Tuple[bool, List[str]]:
     """
     Validate if a patch is likely to apply successfully.
-    
+
     Checks:
     - Proper diff structure
     - Hunk headers are well-formed
     - Context lines are present
-    
+
     Returns:
         (is_applicable, warnings)
     """
     is_valid, errors = validate_diff_structure(diff_text)
     warnings = []
-    
+
     if not is_valid:
         return False, errors
-    
+
     lines = diff_text.split('\n')
     current_file = None
-    
+
     for i, line in enumerate(lines):
         # Track files
         if line.startswith('diff --git'):
             match = re.search(r'diff --git a/([^\s]+)', line)
             if match:
                 current_file = match.group(1)
-        
+
         # Check hunk headers
         hunk_match = re.match(r'^@@ -(\d+),(\d+) \+(\d+),(\d+) @@', line)
         if hunk_match:
@@ -288,14 +378,14 @@ def validate_patch_applicability(diff_text: str) -> Tuple[bool, List[str]]:
             old_count = int(hunk_match.group(2))
             new_start = int(hunk_match.group(3))
             new_count = int(hunk_match.group(4))
-            
+
             # Warn if line numbers seem suspicious
             if old_start == 0 or new_start == 0:
                 warnings.append(f"Warning: Hunk starts at line 0 (might be invalid) at line {i+1}")
-            
+
             # Check if counts match expected pattern
             if old_count == 0 and new_count == 0:
                 warnings.append(f"Warning: Both old_count and new_count are 0 at line {i+1}")
-    
+
     return True, warnings
 
