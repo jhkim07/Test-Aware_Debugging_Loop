@@ -21,7 +21,14 @@ from bench_agent.runner.hidden_eval import run_hidden_eval
 from bench_agent.runner.report_parser import parse_harness_report, parse_pytest_output
 from datasets import load_dataset
 
-console = Console()
+# Phase 2: Two-Stage Architecture (feature flag)
+USE_TWO_STAGE = os.getenv("USE_TWO_STAGE", "0") == "1"
+if USE_TWO_STAGE:
+    from bench_agent.protocol.two_stage import generate_test_diff_two_stage, generate_code_diff_two_stage
+    console = Console()
+    console.print("[cyan]⚙️  Phase 2: Two-Stage Architecture ENABLED[/cyan]")
+else:
+    console = Console()
 
 def load_config(path: Path) -> dict:
     return yaml.safe_load(path.read_text())
