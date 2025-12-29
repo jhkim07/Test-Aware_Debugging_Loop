@@ -19,7 +19,7 @@ from bench_agent.editor import (
     format_validation_result,
     EDIT_SCRIPT_SYSTEM_PROMPT
 )
-from bench_agent.editor.edit_validator import validate_no_duplicate_code
+from bench_agent.editor.edit_validator import validate_no_duplicate_code, auto_fix_duplicate_code
 
 
 # ============================================================================
@@ -140,26 +140,42 @@ def generate_test_diff_edit_script(
                     metadata['errors'].append(f"Validation failed:\n{errors_text}")
                     return "", metadata
 
-            # Step 5.5: Check for duplicate code patterns
+            # Step 5.5: Check for duplicate code patterns and AUTO-FIX
             dup_validation = validate_no_duplicate_code(test_source_code, edit_script)
             if dup_validation.warnings:
-                if attempt < max_retries:
-                    # Not final attempt - retry with strong feedback
-                    print(f"⚠️  Duplicate code detected (attempt {attempt + 1}/{max_retries + 1}), retrying with feedback...")
-                    for warning in dup_validation.warnings:
-                        print(f"  - {warning}")
+                # AUTO-FIX: Try to fix duplicate code automatically
+                print(f"⚠️  Duplicate code detected (attempt {attempt + 1}/{max_retries + 1}), attempting auto-fix...")
+                for warning in dup_validation.warnings:
+                    print(f"  - {warning}")
 
-                    # Build strong feedback for next attempt
-                    duplicate_feedback = """🚨 CRITICAL ERROR IN PREVIOUS ATTEMPT:
+                fixed_script, fixes = auto_fix_duplicate_code(test_source_code, edit_script)
+
+                if fixes:
+                    # Auto-fix successful
+                    print(f"✓ Auto-fixed {len(fixes)} duplicate code issue(s):")
+                    for fix in fixes:
+                        print(f"  ✓ {fix}")
+
+                    # Use fixed script instead of original
+                    edit_script = fixed_script
+                    # Continue with fixed script (don't retry)
+                else:
+                    # Auto-fix failed, use retry mechanism
+                    if attempt < max_retries:
+                        # Not final attempt - retry with strong feedback
+                        print(f"⚠️  Auto-fix failed, retrying with LLM feedback...")
+
+                        # Build strong feedback for next attempt
+                        duplicate_feedback = """🚨 CRITICAL ERROR IN PREVIOUS ATTEMPT:
 
 Your previous edit script created DUPLICATE CODE by using "insert" when you should have used "replace".
 
 DUPLICATE CODE WARNINGS:
 """
-                    for warning in dup_validation.warnings:
-                        duplicate_feedback += f"  - {warning}\n"
+                        for warning in dup_validation.warnings:
+                            duplicate_feedback += f"  - {warning}\n"
 
-                    duplicate_feedback += """
+                        duplicate_feedback += """
 YOU MUST FIX THIS IN THE NEXT ATTEMPT:
 1. Use "replace" to MODIFY existing code (removes old line, adds new line)
 2. Use "insert" ONLY for COMPLETELY NEW code that doesn't exist yet
@@ -171,17 +187,17 @@ CORRECT EXAMPLES:
 
 Try again with the CORRECT edit types!
 """
-                    continue  # Retry with feedback
-                else:
-                    # Final attempt still has duplicates - make it fatal
-                    print(f"❌ Duplicate code detected on final attempt {attempt + 1}/{max_retries + 1}:")
-                    for warning in dup_validation.warnings:
-                        print(f"  - {warning}")
-                    metadata['errors'].append(
-                        f"Duplicate code persists after {max_retries + 1} attempts. "
-                        "LLM consistently using wrong edit types."
-                    )
-                    return "", metadata
+                        continue  # Retry with feedback
+                    else:
+                        # Final attempt still has duplicates - make it fatal
+                        print(f"❌ Duplicate code detected on final attempt {attempt + 1}/{max_retries + 1}:")
+                        for warning in dup_validation.warnings:
+                            print(f"  - {warning}")
+                        metadata['errors'].append(
+                            f"Duplicate code persists after {max_retries + 1} attempts. "
+                            "LLM consistently using wrong edit types."
+                        )
+                        return "", metadata
 
             # Step 6: Apply edits
             apply_result = apply_edit_script(test_source_code, edit_script)
@@ -322,24 +338,40 @@ def generate_code_diff_edit_script(
                     metadata['errors'].append(f"Validation failed:\n{errors_text}")
                     return "", metadata
 
-            # Step 5.5: Check for duplicate code patterns
+            # Step 5.5: Check for duplicate code patterns and AUTO-FIX
             dup_validation = validate_no_duplicate_code(code_source, edit_script)
             if dup_validation.warnings:
-                if attempt < max_retries:
-                    print(f"⚠️  Duplicate code detected (attempt {attempt + 1}/{max_retries + 1}), retrying with feedback...")
-                    for warning in dup_validation.warnings:
-                        print(f"  - {warning}")
+                # AUTO-FIX: Try to fix duplicate code automatically
+                print(f"⚠️  Duplicate code detected (attempt {attempt + 1}/{max_retries + 1}), attempting auto-fix...")
+                for warning in dup_validation.warnings:
+                    print(f"  - {warning}")
 
-                    duplicate_feedback = """🚨 CRITICAL ERROR IN PREVIOUS ATTEMPT:
+                fixed_script, fixes = auto_fix_duplicate_code(code_source, edit_script)
+
+                if fixes:
+                    # Auto-fix successful
+                    print(f"✓ Auto-fixed {len(fixes)} duplicate code issue(s):")
+                    for fix in fixes:
+                        print(f"  ✓ {fix}")
+
+                    # Use fixed script instead of original
+                    edit_script = fixed_script
+                    # Continue with fixed script (don't retry)
+                else:
+                    # Auto-fix failed, use retry mechanism
+                    if attempt < max_retries:
+                        print(f"⚠️  Auto-fix failed, retrying with LLM feedback...")
+
+                        duplicate_feedback = """🚨 CRITICAL ERROR IN PREVIOUS ATTEMPT:
 
 Your previous edit script created DUPLICATE CODE by using "insert" when you should have used "replace".
 
 DUPLICATE CODE WARNINGS:
 """
-                    for warning in dup_validation.warnings:
-                        duplicate_feedback += f"  - {warning}\n"
+                        for warning in dup_validation.warnings:
+                            duplicate_feedback += f"  - {warning}\n"
 
-                    duplicate_feedback += """
+                        duplicate_feedback += """
 YOU MUST FIX THIS:
 1. Use "replace" to MODIFY existing code (removes old, adds new)
 2. Use "insert" ONLY for BRAND NEW code
@@ -351,15 +383,15 @@ CORRECT EXAMPLES:
 
 Try again with CORRECT edit types!
 """
-                    continue  # Retry with feedback
-                else:
-                    print(f"❌ Duplicate code detected on final attempt {attempt + 1}/{max_retries + 1}:")
-                    for warning in dup_validation.warnings:
-                        print(f"  - {warning}")
-                    metadata['errors'].append(
-                        f"Duplicate code persists after {max_retries + 1} attempts."
-                    )
-                    return "", metadata
+                        continue  # Retry with feedback
+                    else:
+                        print(f"❌ Duplicate code detected on final attempt {attempt + 1}/{max_retries + 1}:")
+                        for warning in dup_validation.warnings:
+                            print(f"  - {warning}")
+                        metadata['errors'].append(
+                            f"Duplicate code persists after {max_retries + 1} attempts."
+                        )
+                        return "", metadata
 
             # Step 6: Apply edits
             apply_result = apply_edit_script(code_source, edit_script)

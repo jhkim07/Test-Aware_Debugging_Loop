@@ -5,6 +5,7 @@ Validates edit scripts before application.
 Checks anchor uniqueness, existence, and structural correctness.
 """
 
+import json
 from typing import Tuple, List, Dict, Optional
 from dataclasses import dataclass
 
@@ -557,3 +558,94 @@ def validate_no_duplicate_code(
         errors=[],
         warnings=warnings
     )
+
+
+def auto_fix_duplicate_code(
+    source_code: str,
+    edit_script: Dict
+) -> Tuple[Dict, List[str]]:
+    """
+    Automatically fix duplicate code issues by converting insert → replace.
+
+    When LLM uses "insert" to add code that already exists, automatically
+    convert it to "replace" to modify existing code instead.
+
+    Args:
+        source_code: Original source code
+        edit_script: Edit script with potential duplicate issues
+
+    Returns:
+        (fixed_edit_script, list_of_fixes_applied)
+    """
+    fixes_applied = []
+    fixed_script = json.loads(json.dumps(edit_script))  # Deep copy
+    lines = source_code.split('\n')
+
+    edits = fixed_script.get('edits', [])
+
+    for i, edit in enumerate(edits):
+        edit_type = edit.get('type')
+
+        # Only check insert operations
+        if edit_type not in ('insert_before', 'insert_after'):
+            continue
+
+        content = edit.get('content', '')
+        if not content:
+            continue
+
+        # Extract anchor text from dict (FIX: handle dict format)
+        anchor_dict = edit.get('anchor', {})
+        if isinstance(anchor_dict, dict):
+            anchor_text = anchor_dict.get('selected', '')
+        else:
+            # Fallback for string format (legacy/test compatibility)
+            anchor_text = str(anchor_dict)
+
+        if not anchor_text:
+            continue
+
+        content_lines = content.strip().split('\n')
+
+        # Check if content already exists near anchor
+        duplicate_found = False
+        for content_line in content_lines:
+            content_stripped = content_line.strip()
+            if not content_stripped or content_stripped.startswith('#'):
+                continue
+
+            # Check if this line exists in source
+            for src_line in lines:
+                if src_line.strip() == content_stripped:
+                    duplicate_found = True
+                    break
+
+            if duplicate_found:
+                break
+
+        if duplicate_found:
+            # Convert insert → replace
+            # Strategy: Replace the anchor line with anchor + new content
+            old_anchor_line = anchor_text.strip()
+
+            # Find the actual anchor line in source to replace
+            anchor_found = False
+            for src_line in lines:
+                if anchor_text.strip() in src_line:
+                    old_anchor_line = src_line.strip()
+                    anchor_found = True
+                    break
+
+            if anchor_found:
+                # Change edit type to replace
+                edits[i]['type'] = 'replace'
+                edits[i]['old_content'] = old_anchor_line
+                # Keep content and anchor as is
+
+                fix_msg = (
+                    f"Edit {i+1}: Auto-fixed duplicate code issue. "
+                    f"Changed '{edit_type}' → 'replace' for content near '{anchor_text[:50]}...'"
+                )
+                fixes_applied.append(fix_msg)
+
+    return fixed_script, fixes_applied
