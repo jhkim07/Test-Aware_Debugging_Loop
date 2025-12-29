@@ -12,6 +12,11 @@ from .anchor_extractor import (
     format_candidates_for_prompt,
     get_candidates_near_line
 )
+from .candidate_ranker import (
+    filter_unique_candidates,
+    rank_candidates,
+    get_unique_best_candidates
+)
 
 
 # ============================================================================
@@ -149,7 +154,8 @@ def generate_test_edit_prompt(
     source_code: str,
     task_description: str,
     target_line: Optional[int] = None,
-    max_candidates: int = 20
+    max_candidates: int = 20,
+    require_unique: bool = True  # NEW: P0.9.3 - Filter unique only
 ) -> str:
     """
     Generate LLM prompt for test edit script creation.
@@ -160,6 +166,7 @@ def generate_test_edit_prompt(
         task_description: What tests to add
         target_line: Optional line number to focus anchor search
         max_candidates: Maximum anchor candidates to show
+        require_unique: Only show unique anchors (P0.9.3 improvement)
 
     Returns:
         Formatted prompt string
@@ -173,6 +180,29 @@ def generate_test_edit_prompt(
 
     # Filter to top-level only (prevents malformed diffs from nested anchors)
     filtered_candidates = filter_top_level_only(candidates, allow_single_indent=False)
+
+    # P0.9.3: Filter to UNIQUE-ONLY candidates (critical improvement)
+    if require_unique:
+        # Convert dict of lists to flat list for filtering
+        all_candidates = []
+        for cand_list in filtered_candidates.values():
+            all_candidates.extend(cand_list)
+
+        # Filter unique only
+        unique_candidates = filter_unique_candidates(source_code, all_candidates)
+
+        # Rank by quality and get top candidates
+        ranked = rank_candidates(source_code, unique_candidates, target_line)
+        top_candidates = [r.candidate for r in ranked[:max_candidates]]
+
+        # Convert back to dict format for formatting
+        filtered_candidates = {
+            'function_definitions': [c for c in top_candidates if c.type == 'function_def'],
+            'class_definitions': [c for c in top_candidates if c.type == 'class_def'],
+            'import_statements': [c for c in top_candidates if c.type == 'import_stmt'],
+            'line_patterns': [c for c in top_candidates if c.type == 'line_pattern'],
+            'decorators': [c for c in top_candidates if c.type == 'decorator']
+        }
 
     # Format candidates for prompt
     candidates_text = format_candidates_for_prompt(
@@ -197,7 +227,8 @@ def generate_code_edit_prompt(
     task_description: str,
     test_results: str,
     target_line: Optional[int] = None,
-    max_candidates: int = 20
+    max_candidates: int = 20,
+    require_unique: bool = True  # NEW: P0.9.3 - Filter unique only
 ) -> str:
     """
     Generate LLM prompt for code edit script creation.
@@ -209,6 +240,7 @@ def generate_code_edit_prompt(
         test_results: Test failure information
         target_line: Optional line number to focus anchor search
         max_candidates: Maximum anchor candidates to show
+        require_unique: Only show unique anchors (P0.9.3 improvement)
 
     Returns:
         Formatted prompt string
@@ -222,6 +254,29 @@ def generate_code_edit_prompt(
 
     # Filter to top-level only (prevents malformed diffs from nested anchors)
     filtered_candidates = filter_top_level_only(candidates, allow_single_indent=False)
+
+    # P0.9.3: Filter to UNIQUE-ONLY candidates (critical improvement)
+    if require_unique:
+        # Convert dict of lists to flat list for filtering
+        all_candidates = []
+        for cand_list in filtered_candidates.values():
+            all_candidates.extend(cand_list)
+
+        # Filter unique only
+        unique_candidates = filter_unique_candidates(source_code, all_candidates)
+
+        # Rank by quality and get top candidates
+        ranked = rank_candidates(source_code, unique_candidates, target_line)
+        top_candidates = [r.candidate for r in ranked[:max_candidates]]
+
+        # Convert back to dict format for formatting
+        filtered_candidates = {
+            'function_definitions': [c for c in top_candidates if c.type == 'function_def'],
+            'class_definitions': [c for c in top_candidates if c.type == 'class_def'],
+            'import_statements': [c for c in top_candidates if c.type == 'import_stmt'],
+            'line_patterns': [c for c in top_candidates if c.type == 'line_pattern'],
+            'decorators': [c for c in top_candidates if c.type == 'decorator']
+        }
 
     # Format candidates for prompt
     candidates_text = format_candidates_for_prompt(

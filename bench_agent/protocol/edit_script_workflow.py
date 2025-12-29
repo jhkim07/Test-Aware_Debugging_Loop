@@ -132,8 +132,21 @@ def generate_test_diff_edit_script(
 
             if not validation.is_valid:
                 if attempt < max_retries:
+                    # P0.9.3: Analyze validation errors and provide targeted feedback
                     errors_text = format_validation_result(validation)
-                    print(f"⚠️  Validation failed (attempt {attempt + 1}), retrying...")
+                    error_types = _analyze_validation_errors(validation)
+
+                    if 'anchor_not_unique' in error_types:
+                        print(f"⚠️  Validation failed: Non-unique anchors (attempt {attempt + 1})")
+                        print(f"    Retry with UNIQUE-ONLY candidates...")
+                        # Next iteration will use require_unique=True by default
+                    elif 'anchor_not_found' in error_types:
+                        print(f"⚠️  Validation failed: Anchor not found (attempt {attempt + 1})")
+                        print(f"    Retry with verified candidates...")
+                    else:
+                        print(f"⚠️  Validation failed (attempt {attempt + 1}), retrying...")
+
+                    print(f"    Errors:\n{errors_text}")
                     continue  # Retry
                 else:
                     errors_text = format_validation_result(validation)
@@ -545,3 +558,34 @@ def read_file_from_repo(repo_path: Path, file_path: str) -> Optional[str]:
         pass
 
     return None
+
+
+def _analyze_validation_errors(validation_result) -> set:
+    """
+    Analyze validation errors and return error types.
+
+    Args:
+        validation_result: ValidationResult object
+
+    Returns:
+        Set of error types (e.g., {'anchor_not_unique', 'anchor_not_found'})
+    """
+    error_types = set()
+
+    if hasattr(validation_result, 'errors'):
+        for error in validation_result.errors:
+            # Extract error type from error message or object
+            if hasattr(error, 'error_type'):
+                error_types.add(error.error_type)
+            elif isinstance(error, str):
+                # Parse from string (fallback)
+                if 'not unique' in error.lower() or 'anchor_not_unique' in error:
+                    error_types.add('anchor_not_unique')
+                elif 'not found' in error.lower() or 'anchor_not_found' in error:
+                    error_types.add('anchor_not_found')
+                elif 'invalid' in error.lower():
+                    error_types.add('invalid_edit')
+                else:
+                    error_types.add('unknown')
+
+    return error_types

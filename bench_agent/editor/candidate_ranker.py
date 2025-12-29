@@ -122,12 +122,12 @@ def compute_candidate_score(
     Returns:
         Dict with individual scores and composite score
     """
-    # Default weights
+    # Default weights - UPDATED: Uniqueness is CRITICAL (P0.9.3)
     if weights is None:
         weights = {
-            'uniqueness': 0.5,   # Most important
-            'proximity': 0.3,    # Important if target specified
-            'stability': 0.2,    # Bonus for structural anchors
+            'uniqueness': 0.7,   # CRITICAL - Increased from 0.5 to 0.7
+            'proximity': 0.15,   # Reduced from 0.3
+            'stability': 0.15,   # Reduced from 0.2
         }
 
     # Compute individual scores
@@ -477,23 +477,23 @@ def recommend_anchors_for_edit(
     Returns:
         Recommended anchors
     """
-    # Adjust weights based on edit type
+    # Adjust weights based on edit type - UPDATED (P0.9.3)
     if edit_type in ('insert_before', 'insert_after'):
-        # Prefer stable structural anchors
+        # Prefer stable structural anchors, but uniqueness still critical
         weights = {
-            'uniqueness': 0.5,
-            'proximity': 0.2,
-            'stability': 0.3,  # Increased stability weight
+            'uniqueness': 0.6,   # UPDATED: Still prioritize uniqueness
+            'proximity': 0.15,
+            'stability': 0.25,   # Structural anchors good for insertion
         }
     elif edit_type in ('replace', 'delete'):
-        # Prefer unique line patterns
+        # Uniqueness is CRITICAL for replace/delete
         weights = {
-            'uniqueness': 0.7,  # Increased uniqueness weight
-            'proximity': 0.2,
+            'uniqueness': 0.8,   # UPDATED: Even higher for replace/delete
+            'proximity': 0.1,
             'stability': 0.1,
         }
     else:
-        weights = None  # Use defaults
+        weights = None  # Use defaults (0.7/0.15/0.15)
 
     # Get best candidates with adjusted weights
     all_candidates = []
