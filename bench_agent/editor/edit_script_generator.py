@@ -48,10 +48,38 @@ Edit script format:
 }
 
 Available edit types:
-- insert_before: Insert content before anchor line
-- insert_after: Insert content after anchor line
-- replace: Replace anchor line with content
-- delete: Delete anchor line (no content field needed)
+
+1. "replace" - MODIFY existing code (most common)
+   Use when: Changing existing lines, updating values, fixing bugs
+   Example: Change "end_line = -1" to "end_line = 10"
+   ✓ Correct: {"type": "replace", "anchor": {"selected": "end_line = -1"}, "content": "end_line = 10"}
+   ✗ WRONG:  {"type": "insert_before", ...} ← Creates DUPLICATE code!
+
+   CRITICAL: "replace" REMOVES the anchor line and adds new content
+   Result: Old code GONE, new code IN PLACE
+
+2. "insert_after" - ADD new code after anchor
+   Use when: Adding NEW functions/methods that didn't exist before
+   Example: Add a new test function after existing test
+   ✓ Correct: {"type": "insert_after", "anchor": {"selected": "def test_old():"}, "content": "def test_new():\\n    pass"}
+
+   WARNING: insert_after on a function adds code INSIDE that function!
+   For adding new functions, use "insert_before" on the NEXT function instead.
+
+3. "insert_before" - ADD new code before anchor
+   Use when: Adding imports, adding new functions before an anchor
+   Example: Add new function before existing function
+   ✓ Correct: {"type": "insert_before", "anchor": {"selected": "def existing():"}, "content": "def new():\\n    pass\\n"}
+
+4. "delete" - REMOVE code
+   Use when: Removing unnecessary code
+   Example: {"type": "delete", "anchor": {"selected": "old_line = 1"}}
+   No "content" field needed.
+
+DECISION FLOWCHART:
+- Changing existing code? → Use "replace"
+- Adding brand new code? → Use "insert_before" or "insert_after"
+- Removing code? → Use "delete"
 """
 
 
@@ -100,9 +128,14 @@ SOURCE CODE:
 REQUIREMENTS:
 1. Fix the code to pass the failing tests
 2. ONLY use anchors from the "Available Anchors" list above
-3. Use appropriate edit type (replace for fixing existing code, insert_after for adding new code)
+3. Choose correct edit type:
+   - MODIFYING existing code? → Use "replace" (removes old, adds new)
+   - ADDING completely new code? → Use "insert_before" or "insert_after"
+   - Example: To fix "end_line = -1", use "replace" NOT "insert"
 4. Preserve existing code structure
 5. Return valid JSON edit script
+
+CRITICAL: Using "insert" when you should use "replace" creates DUPLICATE code!
 
 Generate the edit script now:"""
 

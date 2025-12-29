@@ -1,0 +1,19 @@
+--- a/astropy/modeling/tests/test_separable.py
++++ b/astropy/modeling/tests/test_separable.py
+@@ -131,6 +131,16 @@
+ 
+ @pytest.mark.parametrize(('compound_model', 'result'), compound_models.values())
+ def test_separable(compound_model, result):
++
++
++def test_separability_nested_compound_model():
++    cm = m.Linear1D(10) & m.Linear1D(5)
++    result = separability_matrix(m.Pix2Sky_TAN() & cm)
++    expected_result = np.array([[ True,  True, False, False],
++                                [ True,  True, False, False],
++                                [False, False,  True,  True],
++                                [False, False,  True,  True]])
++    assert_allclose(result, expected_result)
+     assert_allclose(is_separable(compound_model), result[0])
+     assert_allclose(separability_matrix(compound_model), result[1])
+ 

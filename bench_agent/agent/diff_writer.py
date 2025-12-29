@@ -3,12 +3,15 @@ Phase 2: Stage B - Diff Writer
 
 Converts planning JSON into unified diff format.
 Focuses on precise formatting, not semantic decisions.
+
+Phase 2.2: Enhanced with syntax validation and sanitization.
 """
 
 import json
-from typing import Dict
+from typing import Dict, List
 
 from .llm_client import chat
+from .diff_syntax_validator import sanitize_diff, validate_diff_syntax
 
 
 # ============================================================================
@@ -35,7 +38,18 @@ Start your output with: diff --git a/..."""
 # ============================================================================
 
 def build_writer_prompt_test(plan: Dict, context: Dict) -> str:
-    """Build prompt for test diff generation."""
+    """Build prompt for test diff generation with error feedback."""
+
+    # Phase 2.2: Add previous error feedback
+    error_feedback = ""
+    if context.get('previous_errors'):
+        error_list = '\n'.join(f"  - {err}" for err in context['previous_errors'])
+        error_feedback = f"""
+⚠️ CRITICAL - Previous attempt had these errors:
+{error_list}
+
+You MUST avoid these errors in this attempt.
+"""
 
     reference_hint = ""
     if context.get('reference_test_patch'):
@@ -60,6 +74,8 @@ Current conftest.py content (if dictionary_append):
 Plan:
 {json.dumps(plan, indent=2)}
 
+{error_feedback}
+
 {reference_hint}
 
 {conftest_hint}
@@ -69,13 +85,30 @@ Requirements:
 - Approach: {plan.get('approach', 'N/A')}
 - Description: {plan.get('description', 'N/A')}
 
+CRITICAL FORMATTING RULES:
+- NO stray triple-quotes outside context lines
+- ALL hunk headers MUST be complete: @@ -X,Y +A,B @@
+- Context lines MUST start with space, + for additions, - for removals
+- NO partial lines or broken syntax
+
 Output unified diff ONLY. Start with: diff --git a/..."""
 
 
 def build_writer_prompt_code(plan: Dict, context: Dict) -> str:
-    """Build prompt for code diff generation."""
+    """Build prompt for code diff generation with error feedback."""
 
     file_plan = plan["files"][0]  # Assume single file for now
+
+    # Phase 2.2: Add previous error feedback
+    error_feedback = ""
+    if context.get('previous_errors'):
+        error_list = '\n'.join(f"  - {err}" for err in context['previous_errors'])
+        error_feedback = f"""
+⚠️ CRITICAL - Previous attempt had these errors:
+{error_list}
+
+You MUST avoid these errors in this attempt.
+"""
 
     reference_hint = ""
     if context.get('reference_patch'):
@@ -102,6 +135,8 @@ Target Function Context:
 Plan:
 {json.dumps(file_plan, indent=2)}
 
+{error_feedback}
+
 {reference_hint}
 
 {function_hint}
@@ -110,6 +145,12 @@ Requirements:
 - File: {file_plan.get('path', 'N/A')}
 - Function: {file_plan.get('function', 'N/A')}
 - Change: {file_plan.get('change', 'N/A')}
+
+CRITICAL FORMATTING RULES:
+- NO stray triple-quotes outside context lines
+- ALL hunk headers MUST be complete: @@ -X,Y +A,B @@
+- Context lines MUST start with space, + for additions, - for removals
+- NO partial lines or broken syntax
 
 Output unified diff ONLY. Start with: diff --git a/..."""
 
@@ -128,6 +169,8 @@ def render_diff(
     """
     Stage B: Generate unified diff from plan.
 
+    Phase 2.2: Enhanced with sanitization and validation.
+
     Args:
         role: "test" or "code"
         plan: Planning JSON from Stage A
@@ -136,10 +179,10 @@ def render_diff(
         context: Dict with reference patches, source code, etc.
 
     Returns:
-        Unified diff string
+        Unified diff string (sanitized and validated)
 
     Raises:
-        ValueError: If diff generation fails
+        ValueError: If diff generation or validation fails
     """
 
     # Build prompt based on role
@@ -158,16 +201,53 @@ def render_diff(
 
     response = chat(client, model, messages).strip()
 
-    # Remove markdown if present
-    if response.startswith("```"):
-        lines = response.split("\n")
-        response = "\n".join([l for l in lines if not l.strip().startswith("```")])
+    # DEBUG: Save full diff to file for analysis
+    import sys, os
+    debug_dir = "/tmp/phase22_debug"
+    os.makedirs(debug_dir, exist_ok=True)
+    debug_file = f"{debug_dir}/{role}_original.diff"
+    with open(debug_file, 'w') as f:
+        f.write(response)
+    print(f"[DEBUG] Saved original {role} diff to {debug_file}", file=sys.stderr)
 
-    # Basic sanity check
-    if not response.startswith("diff --git"):
-        raise ValueError(f"Writer output doesn't start with 'diff --git'. Got: {response[:100]}")
+    # Check for invalid lines
+    invalid_found = False
+    for i, line in enumerate(response.split('\n'), 1):
+        if line.strip() and not line.startswith(('diff ', '--- ', '+++ ', 'index ', '@@', ' ', '+', '-')):
+            if not invalid_found:
+                print(f"[DEBUG] Invalid lines found in {role} diff:", file=sys.stderr)
+                invalid_found = True
+            print(f"  Line {i}: {repr(line[:80])}", file=sys.stderr)
+    if not invalid_found:
+        print(f"[DEBUG] No invalid lines in original {role} diff", file=sys.stderr)
 
-    return response
+    # Phase 2.2: Apply sanitization pipeline
+    sanitized_diff, warnings = sanitize_diff(response)
+
+    # DEBUG: Also save sanitized diff
+    sanitized_file = f"{debug_dir}/{role}_sanitized.diff"
+    with open(sanitized_file, 'w') as f:
+        f.write(sanitized_diff)
+    print(f"[DEBUG] Saved sanitized {role} diff to {sanitized_file}", file=sys.stderr)
+
+    # Log warnings if any
+    if warnings:
+        import sys
+        print(f"[diff_writer] Sanitization warnings for {role} diff:", file=sys.stderr)
+        for warning in warnings:
+            print(f"  - {warning}", file=sys.stderr)
+
+    # Final validation
+    is_valid, errors = validate_diff_syntax(sanitized_diff)
+    if not is_valid:
+        error_msg = '\n'.join(errors)
+        raise ValueError(f"Diff syntax validation failed:\n{error_msg}")
+
+    # Basic sanity check (should pass after sanitization)
+    if not sanitized_diff.startswith("diff --git"):
+        raise ValueError(f"Sanitized diff doesn't start with 'diff --git'. Got: {sanitized_diff[:100]}")
+
+    return sanitized_diff
 
 
 # ============================================================================

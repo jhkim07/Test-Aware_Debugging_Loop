@@ -1,0 +1,44 @@
+```diff
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+index 1234567..89abcde 100644
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -70,6 +70,18 @@ def test_roundtrip(tmp_path):
+     53000.123456 2.37847222222222e-05    -2.37847222222222e-05   -0.292553       -0.374935
+     NO 1.14467592592593e-05    -1.14467592592593e-05   0.000000        NO
+     """
++    if lowercase:
++        example_qdp = lowercase_header(example_qdp)
++
++    path = str(tmp_path / "test.qdp")
++    path2 = str(tmp_path / "test2.qdp")
++
++    with open(path, "w") as f:
++        f.write(example_qdp)
++
++    table = Table.read(path, format="ascii.qdp")
++    table.write(path2, format="ascii.qdp")
++    table2 = Table.read(path2, format="ascii.qdp")
+ 
+     assert table.colnames == table2.colnames
+     for name in table.colnames:
+@@ -78,3 +90,18 @@ def test_roundtrip(tmp_path):
+         assert np.allclose(table[name], table2[name], rtol=1e-15)
+ 
+     assert np.isclose(table2["MJD_nerr"][0], -2.37847222222222e-05)
++
++
++def test_lowercase_qdp_commands(tmp_path):
++    """Test reading a QDP file with lowercase commands."""
++    qdp_content = """
++    read serr 1 2
++    1 0.5 1 0.5
++    """
++    path = tmp_path / "lowercase.qdp"
++    path.write_text(qdp_content)
++
++    table = Table.read(path, format="ascii.qdp")
++
++    assert table.colnames == ["col1", "col2", "col3", "col4"]
++    assert len(table) == 1
+```

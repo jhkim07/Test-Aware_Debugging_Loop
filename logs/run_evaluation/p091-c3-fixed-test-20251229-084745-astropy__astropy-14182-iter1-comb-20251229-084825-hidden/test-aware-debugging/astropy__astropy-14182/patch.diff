@@ -1,0 +1,29 @@
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -169,6 +169,26 @@
+ """
+ dat = ascii.read(table, Reader=ascii.RST)
+
++
++def test_write_rst_with_header_rows():
++    """Write a QTable as an RST Table with header rows specified"""
++    from astropy.table import QTable
++    import sys
++    import astropy.units as u
++    tbl = QTable({'wave': [350, 950]*u.nm, 'response': [0.7, 1.2]*u.count})
++    out = StringIO()
++    tbl.write(out, format="ascii.rst", header_rows=["name", "unit"])
++    assert_equal_splitlines(
++        out.getvalue(),
++        """
++===== ========
++ wave response
++  nm       ct
++350.0      0.7
++950.0      1.2
++===== ========
++""",
++    )
+
+ def test_write_normal():
+     """Write a table as a normal SimpleRST Table"""

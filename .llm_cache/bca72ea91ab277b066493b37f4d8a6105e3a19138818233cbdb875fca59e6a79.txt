@@ -1,0 +1,9 @@
+{
+  "files": [
+    {
+      "path": "astropy/io/ascii/rst.py",
+      "function_or_class": "RST",
+      "change_summary": "Removed the start_line attribute and modified the constructor to accept header_rows."
+    }
+  ]
+}

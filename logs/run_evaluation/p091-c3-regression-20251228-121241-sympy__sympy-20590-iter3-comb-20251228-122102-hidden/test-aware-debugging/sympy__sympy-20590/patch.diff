@@ -1,0 +1,25 @@
+--- a/sympy/core/tests/test_basic.py
++++ b/sympy/core/tests/test_basic.py
+@@ -35,6 +35,11 @@
+ def test_equality():
++def test_symbol_dict():
++    from sympy.core.symbol import Symbol
++    s = Symbol('s')
++    assert hasattr(s, '__dict__'), "Symbol instances should have a '__dict__' attribute in version 1.7+"
++    assert s.__dict__ == {}, "The '__dict__' attribute should be an empty dictionary"
+     instances = [b1, b2, b3, b21, Basic(b1, b1, b1), Basic]
+     for i, b_i in enumerate(instances):
+         for j, b_j in enumerate(instances):
+
+--- a/sympy/core/_print_helpers.py
++++ b/sympy/core/_print_helpers.py
+@@ -6,6 +6,10 @@
+ """
+
+ class Printable:
++    # Since this class is used as a mixin we set empty slots. That means that
++    # instances of any subclasses that use slots will not need to have a
++    # __dict__.
++    __slots__ = ()
+     """
+     The default implementation of printing for SymPy classes.

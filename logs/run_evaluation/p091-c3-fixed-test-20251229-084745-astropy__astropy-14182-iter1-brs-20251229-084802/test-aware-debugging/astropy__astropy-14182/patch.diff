@@ -1,0 +1,97 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+ 
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -169,6 +169,26 @@
+ """
+ dat = ascii.read(table, Reader=ascii.RST)
+ 
++
++def test_write_rst_with_header_rows():
++    """Write a QTable as an RST Table with header rows specified"""
++    from astropy.table import QTable
++    import sys
++    import astropy.units as u
++    tbl = QTable({'wave': [350, 950]*u.nm, 'response': [0.7, 1.2]*u.count})
++    out = StringIO()
++    tbl.write(out, format="ascii.rst", header_rows=["name", "unit"])
++    assert_equal_splitlines(
++        out.getvalue(),
++        """
++===== ========
++ wave response
++  nm       ct
++350.0      0.7
++950.0      1.2
++===== ========
++""",
++    )
+ 
+ def test_write_normal():
+     """Write a table as a normal SimpleRST Table"""

@@ -1,0 +1,9 @@
+{
+  "files": [
+    {
+      "path": "astropy/io/ascii/rst.py",
+      "function": "RST.__init__",
+      "change": "Add support for header_rows in the RST class constructor."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+--- a/astropy/modeling/tests/test_separable.py
++++ b/astropy/modeling/tests/test_separable.py
+@@ -136,6 +136,18 @@
+ 
+ 
+ def test_custom_model_separable():
++
++
++def test_nested_compound_model_separability():
++    cm = models.Linear1D(10) & models.Linear1D(5)
++    nested_cm = models.Pix2Sky_TAN() & cm
++    expected_matrix = np.array([
++        [True, True, False, False],
++        [True, True, False, False],
++        [False, False, True, True],
++        [False, False, True, True]
++    ])
++    assert_allclose(separability_matrix(nested_cm), expected_matrix)
+     @custom_model
+     def model_a(x):
+         return x

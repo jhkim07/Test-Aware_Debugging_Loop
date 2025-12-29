@@ -1,0 +1,31 @@
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -39,6 +39,7 @@ class RST(FixedWidth):
+ 
+     Example::
+ 
++    header_rows : list, optional
+     Like other fixed-width formats, when writing a table you can provide ``header_rows``
+     to specify a list of table rows to output as the header.  For example::
+ 
+@@ -50,6 +51,7 @@ class RST(FixedWidth):
+ 
+     def __init__(self, *args, header_rows=None, **kwargs):
+         super().__init__(*args, **kwargs)
++        self.header_rows = header_rows
+ 
+     def write(self, table, *args, **kwargs):
+         if self.header_rows is not None:
+@@ -57,10 +59,10 @@ class RST(FixedWidth):
+         # Implementation of write method continues...
+ 
+     # Other methods and implementation details...
+ 
+     # ...
+ 
+     # Additional methods and attributes...
+ 
+     # ...
+ 
+     # End of class RST

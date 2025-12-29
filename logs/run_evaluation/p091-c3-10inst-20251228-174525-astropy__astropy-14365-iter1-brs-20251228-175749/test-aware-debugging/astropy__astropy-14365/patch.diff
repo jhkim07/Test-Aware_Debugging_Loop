@@ -1,0 +1,107 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+ 
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -224,6 +224,36 @@
+ 
+ 
+ def test_read_write_simple_specify_name(tmp_path):
++
++
++def test_read_lowercase_commands(tmp_path):
++    example_qdp = """
++        ! Initial comment line 1
++        ! Initial comment line 2
++        read terr 1
++        read serr 3
++        ! Table 0 comment
++        !a a(pos) a(neg) b c ce d
++        53000.5   0.25  -0.5   1  1.5  3.5 2
++        54000.5   1.25  -1.5   2  2.5  4.5 3
++        NO NO NO NO NO
++        ! Table 1 comment
++        !a a(pos) a(neg) b c ce d
++        54000.5   2.25  -2.5   NO  3.5  5.5 5
++        55000.5   3.25  -3.5   4  4.5  6.5 nan
++        """
++    dat = ascii.read(example_qdp, format="qdp", table_id=1, names=["a", "b", "c", "d"])
++    t = Table.read(
++        example_qdp, format="ascii.qdp", table_id=1, names=["a", "b", "c", "d"]
++    )
++
++    assert np.allclose(t["a"], [54000, 55000])
++    assert t["c_err"][0] == 5.5
++    assert np.ma.is_masked(t["b"][0])
++    assert np.isnan(t["d"][1])
++
++    for col1, col2 in zip(t.itercols(), dat.itercols()):
++        assert np.allclose(col1, col2, equal_nan=True)
+     test_file = tmp_path / "test.qdp"
+     t1 = Table()
+     t1.add_column(Column(name="a", data=[1, 2, 3]))

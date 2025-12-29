@@ -1,0 +1,27 @@
+--- a/sympy/core/tests/test_basic.py
++++ b/sympy/core/tests/test_basic.py
+@@ -29,6 +29,13 @@
+ def test_structure():
++
++
++def test_symbol_dict():
++    s = Symbol('s')
++    assert hasattr(s, '__dict__')
++    assert isinstance(s.__dict__, dict)
++    assert s.__dict__ == {}
+     assert b21.args == (b2, b1)
+     assert b21.func(*b21.args) == b21
+     assert bool(b1)
+
+--- a/sympy/core/_print_helpers.py
++++ b/sympy/core/_print_helpers.py
+@@ -6,6 +6,10 @@
+ """
+
+ class Printable:
++    # Since this class is used as a mixin we set empty slots. That means that
++    # instances of any subclasses that use slots will not need to have a
++    # __dict__.
++    __slots__ = ()
+     """
+     The default implementation of printing for SymPy classes.

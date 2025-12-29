@@ -1,0 +1,16 @@
+--- a/sympy/core/tests/test_basic.py
++++ b/sympy/core/tests/test_basic.py
+@@ -29,6 +29,13 @@
+ 
+ 
+ def test_structure():
++
++
++def test_symbol_dict():
++    x = Symbol('x')
++    assert hasattr(x, '__dict__')
++    assert x.__dict__ == {}
++    assert '__dict__' not in x.__slots__
+     assert b21.args == (b2, b1)
+     assert b21.func(*b21.args) == b21
+     assert bool(b1)

@@ -1,0 +1,1 @@
+{"focus": "tests", "hypotheses": ["The tests for the RST writer in astropy.io.ascii do not include cases where 'header_rows' is specified, which is necessary to validate the handling of this argument and to reproduce the TypeError."], "targets": ["astropy.io.ascii.RST.write", "astropy.table.QTable.write"]}

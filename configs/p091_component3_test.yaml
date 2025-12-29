@@ -1,0 +1,33 @@
+# Component 3 Test Configuration
+# Tests Edit Script Mode on astropy-14182
+
+runner:
+  dataset_name: "princeton-nlp/SWE-bench_Lite"
+
+instances:
+  list:
+    - "astropy__astropy-14182"  # Known failure case from Phase 2
+
+limits:
+  max_iters: 3  # Reduced for quick test
+  time_limit_minutes: 90
+
+split:
+  public_ratio: 0.7
+  seed: 0
+
+policy:
+  forbid_skip: true
+  forbid_xfail: true
+  forbid_network: true
+  restrict_file_io: true
+
+llm:
+  enabled: true
+  model: "gpt-4o"  # Need capable model for JSON generation
+
+# Edit Script specific settings (optional, can be added later)
+edit_script:
+  enabled: true  # Controlled by USE_EDIT_SCRIPT env var
+  require_unique_anchors: true
+  max_candidates_per_type: 10

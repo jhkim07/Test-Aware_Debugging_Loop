@@ -1,0 +1,5 @@
+{
+  "test_file": "astropy/io/ascii/tests/test_rst.py",
+  "approach": "new_function",
+  "description": "Add a test to verify that writing a QTable with header_rows to RST format works correctly."
+}

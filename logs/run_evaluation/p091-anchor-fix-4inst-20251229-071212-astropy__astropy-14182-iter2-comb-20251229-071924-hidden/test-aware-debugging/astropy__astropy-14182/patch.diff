@@ -1,0 +1,23 @@
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -27,6 +27,8 @@
+ class SimpleRSTData(FixedWidthData):
++    end_line = -1
++    splitter_class = FixedWidthTwoLineDataSplitter
+     start_line = 3
+     end_line = -1
+     splitter_class = FixedWidthTwoLineDataSplitter
+@@ -57,10 +59,11 @@
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+
+-    def __init__(self):
++    def __init__(self, header_rows=None):
+         super().__init__(delimiter_pad=None, bookend=False)
+
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        idx = len(self.header.header_rows)
++        lines = [lines[idx]] + lines + [lines[idx]]
+         return lines

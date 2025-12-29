@@ -1,0 +1,22 @@
+{
+  "iterations": {
+    "total": 0,
+    "test": 0,
+    "code": 0,
+    "max_total": 3,
+    "max_test": 3,
+    "max_code": 5
+  },
+  "duplicates": {
+    "total_seen": 0,
+    "unique_count": 0,
+    "duplicate_count": 0
+  },
+  "failures": {
+    "total_failures": 1,
+    "classified": 0,
+    "unclassified": 1,
+    "dominant_failure": null,
+    "is_stuck": false
+  }
+}

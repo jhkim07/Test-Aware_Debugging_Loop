@@ -30,6 +30,24 @@ if USE_TWO_STAGE:
 else:
     console = Console()
 
+# Component 3: Edit Script Mode (feature flag)
+USE_EDIT_SCRIPT = os.getenv("USE_EDIT_SCRIPT", "0") == "1"
+if USE_EDIT_SCRIPT:
+    from bench_agent.protocol.edit_script_workflow import (
+        generate_test_diff_edit_script,
+        generate_code_diff_edit_script,
+        extract_test_file_from_reference,
+        extract_code_file_from_reference,
+        read_file_from_repo
+    )
+    console.print("[cyan]⚙️  Component 3: Edit Script Mode ENABLED[/cyan]")
+
+# Component 1: Iteration Safety Guards (always enabled)
+from bench_agent.protocol.iteration_safety import (
+    IterationSafetyController,
+    format_safety_stats
+)
+
 def load_config(path: Path) -> dict:
     return yaml.safe_load(path.read_text())
 
@@ -97,10 +115,48 @@ def main():
         final_code_diff = ""
         start_time = time.time()
 
+        # Component 1: Initialize Iteration Safety Controller
+        # Determine repository path from instance_id
+        repo_name = instance_id.split('__')[0] if '__' in instance_id else instance_id
+        repo_path = Path(f"/tmp/{repo_name}_{instance_id}")  # Typical SWE-bench path
+
+        safety_controller = IterationSafetyController(
+            repo_path=str(repo_path),
+            instance_id=instance_id,
+            max_total=limits.get("max_iters", 8),  # Use config max_iters
+            max_test=3,  # Max test generation iterations
+            max_code=5   # Max code generation iterations
+        )
+        console.print(f"[dim]Safety guards enabled: max_total={safety_controller.max_total}, max_test={safety_controller.max_test}, max_code={safety_controller.max_code}[/dim]")
+
         for it in range(1, limits["max_iters"] + 1):
+            # Component 1: Check if iteration should continue
+            should_continue_test, stop_reason_test = safety_controller.should_continue("test")
+            should_continue_code, stop_reason_code = safety_controller.should_continue("code")
+
+            if not should_continue_test:
+                console.print(f"[yellow]Safety guard: {stop_reason_test}[/yellow]")
+                break
+
+            if not should_continue_code:
+                console.print(f"[yellow]Safety guard: {stop_reason_code}[/yellow]")
+                break
+
+            # Time limit check
             if (time.time() - start_time) > limits["time_limit_minutes"] * 60:
                 console.print("[yellow]Time limit reached, stopping iterations.")
                 break
+
+            # Component 1: Reset repository state before iteration
+            console.print(f"[dim]Iteration {it}: Resetting repository state...[/dim]")
+            reset_ok, reset_msg = safety_controller.start_iteration("test")  # Use "test" as primary stage
+
+            if not reset_ok:
+                console.print(f"[red]Repository reset failed: {reset_msg}[/red]")
+                safety_controller.record_failure(f"Repository reset failed: {reset_msg}")
+                break
+
+            console.print(f"[dim]Repository reset successful[/dim]")
 
             # Evaluate current combined patch (or empty patch if first iter)
             predictions = inst_dir / "predictions.jsonl"
@@ -300,18 +356,71 @@ def main():
             if 'test_analysis' in locals() and test_analysis and test_analysis.get('expected_value_hints'):
                 expected_value_hints = test_analysis['expected_value_hints']
 
-            test_diff = propose_tests(
-                client, model, repo_ctx, failure,
-                current_tests_hint="",
-                previous_feedback=previous_feedback,
-                expected_value_hints=expected_value_hints  # P0-2: Add expected value enforcement
-            ) if client else ""
-            # Clean test_diff to fix format issues and line numbers
-            test_diff = clean_diff_format(test_diff) if test_diff else ""
+            # Component 3: Edit Script, Phase 2: Two-Stage, or One-Stage test generation
+            if USE_EDIT_SCRIPT:
+                # Component 3: Edit Script Mode
+                test_file_path = extract_test_file_from_reference(test_patch) if test_patch else None
+                if test_file_path and repo_path.exists():
+                    test_source = read_file_from_repo(repo_path, test_file_path)
+                    if test_source:
+                        console.print(f"[cyan]Edit Script: Generating test diff for {test_file_path}[/cyan]")
+                        test_diff, metadata = generate_test_diff_edit_script(
+                            client=client,
+                            model=model,
+                            test_file_path=test_file_path,
+                            test_source_code=test_source,
+                            problem_statement=problem_statement,
+                            reference_test_patch=test_patch,
+                            failure_summary=failure
+                        )
+                        if metadata['success']:
+                            console.print(f"[green]✓ Edit script applied successfully ({metadata['apply_result'].applied_count} edits)[/green]")
+                        else:
+                            console.print(f"[yellow]Edit script failed: {metadata['errors']}[/yellow]")
+                            safety_controller.record_failure(f"Edit script test generation failed: {metadata['errors']}")
+                    else:
+                        console.print(f"[yellow]Could not read test file: {test_file_path}[/yellow]")
+                        test_diff = ""
+                else:
+                    console.print(f"[yellow]Could not extract test file path from reference patch[/yellow]")
+                    test_diff = ""
+            elif USE_TWO_STAGE:
+                # Two-Stage: Planner → Writer
+                context_2stage = {
+                    "problem_statement": problem_statement,
+                    "reference_test_patch": test_patch,
+                    "failure_summary": failure,
+                    "conftest_content": "",  # Could extract from repo if needed
+                }
+                try:
+                    test_diff = generate_test_diff_two_stage(client, context_2stage, mode="research")
+                except Exception as e:
+                    console.print(f"[red]Two-stage test generation failed: {e}[/red]")
+                    test_diff = ""
+                    safety_controller.record_failure(f"Two-stage test generation failed: {e}")
+            else:
+                # One-Stage: Original propose_tests
+                test_diff = propose_tests(
+                    client, model, repo_ctx, failure,
+                    current_tests_hint="",
+                    previous_feedback=previous_feedback,
+                    expected_value_hints=expected_value_hints  # P0-2: Add expected value enforcement
+                ) if client else ""
+                # Clean test_diff to fix format issues and line numbers
+                # SKIP when using Component 3 (Edit Script Mode) - diffs are already clean
+                if not USE_EDIT_SCRIPT:
+                    test_diff = clean_diff_format(test_diff) if test_diff else ""
+
+            # Component 1: Check for duplicate test diff
+            if test_diff and safety_controller.check_duplicate(test_diff):
+                console.print(f"[yellow]⚠️  Duplicate test diff detected (iteration {it}). Skipping to next stage.[/yellow]")
+                safety_controller.record_failure(f"Duplicate test diff in iteration {it}")
+                # Don't break - allow code generation to proceed
 
             # P0.9: Apply normalization to test_diff immediately after generation
             # This ensures BRS validation uses normalized test_diff
-            if test_diff and reference_patch:
+            # SKIP normalization when using Component 3 (Edit Script Mode) or Phase 2.2 (Two-Stage) - diffs are already clean
+            if test_diff and reference_patch and not USE_EDIT_SCRIPT and not USE_TWO_STAGE:
                 try:
                     from bench_agent.protocol.pre_apply_normalization import PreApplyNormalizationGate
                     normalizer = PreApplyNormalizationGate(reference_patch, verbose=False, instance_id=instance_id)
@@ -390,10 +499,13 @@ def main():
                     previous_feedback="",  # Clear previous feedback, use corrective feedback instead
                     expected_value_hints=expected_value_hints
                 ) if client else ""
-                test_diff = clean_diff_format(test_diff) if test_diff else ""
+                # SKIP when using Component 3 (Edit Script Mode) - diffs are already clean
+                if not USE_EDIT_SCRIPT:
+                    test_diff = clean_diff_format(test_diff) if test_diff else ""
 
                 # Re-normalize after regeneration
-                if test_diff and reference_patch:
+                # SKIP when using Component 3 (Edit Script Mode) - diffs are already clean
+                if test_diff and reference_patch and not USE_EDIT_SCRIPT:
                     try:
                         from bench_agent.protocol.pre_apply_normalization import PreApplyNormalizationGate
                         normalizer = PreApplyNormalizationGate(reference_patch, verbose=False, instance_id=instance_id)
@@ -410,7 +522,9 @@ def main():
             # - Include conftest.py to ensure split mechanism works
             tests_only = ensure_conftest_in_patch(test_diff.strip())
             # Apply clean_diff_format to fix line numbers
-            tests_only = clean_diff_format(tests_only) if tests_only else ""
+            # SKIP when using Component 3 (Edit Script Mode) - diffs are already clean
+            if not USE_EDIT_SCRIPT:
+                tests_only = clean_diff_format(tests_only) if tests_only else ""
 
             # P0.9: Re-normalize after conftest addition (conftest might introduce new content)
             if tests_only and reference_patch:
@@ -432,6 +546,11 @@ def main():
             brs_patch_failed = check_patch_apply_failed(brs_res.raw_stdout, brs_res.raw_stderr)
             
             if brs_patch_failed:
+                # Component 1: Record patch apply failure
+                error_msg = brs_res.raw_stderr or brs_res.raw_stdout or "Unknown patch apply error"
+                safety_controller.record_failure(error_msg)
+                console.print(f"[yellow]⚠️  BRS patch apply failed (iteration {it})[/yellow]")
+
                 # Patch failed, tests were not executed
                 brs_report = {
                     "passed": 0,
@@ -520,9 +639,62 @@ Reference Test Patch Analysis:
                 console.print(f"[yellow]BRS patch apply failed: {brs_patch_errors.get('error_message', 'Unknown error')}[/yellow]")
 
             # --- PATCH (required) ---
-            code_diff = propose_patch(client, model, repo_ctx, failure, test_diff) if client else ""
-            # Clean code_diff to remove excessive empty lines and fix format issues
-            code_diff = clean_diff_format(code_diff) if code_diff else ""
+            # Component 3: Edit Script, Phase 2: Two-Stage, or One-Stage code generation
+            if USE_EDIT_SCRIPT:
+                # Component 3: Edit Script Mode
+                code_file_path = extract_code_file_from_reference(reference_patch) if reference_patch else None
+                if code_file_path and repo_path.exists():
+                    code_source = read_file_from_repo(repo_path, code_file_path)
+                    if code_source:
+                        console.print(f"[cyan]Edit Script: Generating code diff for {code_file_path}[/cyan]")
+                        code_diff, metadata = generate_code_diff_edit_script(
+                            client=client,
+                            model=model,
+                            code_file_path=code_file_path,
+                            code_source=code_source,
+                            problem_statement=problem_statement,
+                            reference_patch=reference_patch,
+                            test_results=failure,  # Use failure summary as test results
+                            failure_summary=failure
+                        )
+                        if metadata['success']:
+                            console.print(f"[green]✓ Edit script applied successfully ({metadata['apply_result'].applied_count} edits)[/green]")
+                        else:
+                            console.print(f"[yellow]Edit script failed: {metadata['errors']}[/yellow]")
+                            safety_controller.record_failure(f"Edit script code generation failed: {metadata['errors']}")
+                    else:
+                        console.print(f"[yellow]Could not read code file: {code_file_path}[/yellow]")
+                        code_diff = ""
+                else:
+                    console.print(f"[yellow]Could not extract code file path from reference patch[/yellow]")
+                    code_diff = ""
+            elif USE_TWO_STAGE:
+                # Two-Stage: Planner → Writer
+                context_2stage = {
+                    "problem_statement": problem_statement,
+                    "reference_patch": reference_patch,
+                    "failure_summary": failure,
+                    "function_context": "",  # Could extract from repo if needed
+                }
+                try:
+                    code_diff = generate_code_diff_two_stage(client, context_2stage, mode="research")
+                except Exception as e:
+                    console.print(f"[red]Two-stage code generation failed: {e}[/red]")
+                    code_diff = ""
+                    safety_controller.record_failure(f"Two-stage code generation failed: {e}")
+            else:
+                # One-Stage: Original propose_patch
+                code_diff = propose_patch(client, model, repo_ctx, failure, test_diff) if client else ""
+                # Clean code_diff to remove excessive empty lines and fix format issues
+                # SKIP when using Component 3 (Edit Script Mode) - diffs are already clean
+                if not USE_EDIT_SCRIPT:
+                    code_diff = clean_diff_format(code_diff) if code_diff else ""
+
+            # Component 1: Check for duplicate code diff
+            if code_diff and safety_controller.check_duplicate(code_diff):
+                console.print(f"[yellow]⚠️  Duplicate code diff detected (iteration {it}). LLM is stuck in loop.[/yellow]")
+                safety_controller.record_failure(f"Duplicate code diff in iteration {it}")
+                # Continue to allow evaluation (maybe tests changed)
             
             # Validate patch structure and applicability
             try:
@@ -570,7 +742,8 @@ Reference Test Patch Analysis:
             # - If reference has test files: Use reference test diff (100% accurate)
             # - If reference has no test files: Fall back to LLM test diff with P0.7 normalization
             # - Code diff: Always normalize with P0.7
-            if reference_patch and (test_diff.strip() or code_diff.strip()):
+            # SKIP normalization when using Component 3 (Edit Script Mode) or Phase 2.2 (Two-Stage) - diffs are already clean
+            if reference_patch and (test_diff.strip() or code_diff.strip()) and not USE_EDIT_SCRIPT and not USE_TWO_STAGE:
                 try:
                     from bench_agent.protocol.pre_apply_normalization import apply_normalization_gate_v2
 
@@ -602,7 +775,9 @@ Reference Test Patch Analysis:
             # Step 2: Combine patches (separate test and code patches)
             combined_patch = combine_diffs(test_diff.strip(), code_diff.strip(), include_conftest=False)
             # Apply clean_diff_format to combined patch to fix multi-hunk line numbers
-            combined_patch = clean_diff_format(combined_patch) if combined_patch else ""
+            # SKIP when using Component 3 (Edit Script Mode) or Phase 2.2 (Two-Stage) - diffs are already clean
+            if not USE_EDIT_SCRIPT and not USE_TWO_STAGE:
+                combined_patch = clean_diff_format(combined_patch) if combined_patch else ""
             final_test_diff = test_diff
             final_code_diff = code_diff
 
@@ -629,6 +804,10 @@ Reference Test Patch Analysis:
                     comb_res.raw_stderr or "",
                     comb_res.raw_stdout or ""
                 )
+
+                # Component 1: Record patch apply failure with signature
+                error_msg = comb_res.raw_stderr or comb_res.raw_stdout or "Unknown patch apply error"
+                safety_controller.record_failure(error_msg)
 
                 # Track failure history for this instance
                 if 'patch_failure_history' not in locals():
@@ -743,6 +922,18 @@ Reference Test Patch Analysis:
             else:
                 console.print("[yellow]Public tests not passing yet; continuing.[/yellow]")
                 # Feedback is already stored in history above
+
+        # Component 1: Print iteration safety statistics
+        safety_stats = safety_controller.get_stats()
+        console.print("\n" + "="*80)
+        console.print(format_safety_stats(safety_stats))
+        console.print("="*80 + "\n")
+
+        # Save safety statistics to file
+        (inst_dir / "safety_stats.json").write_text(
+            json.dumps(safety_stats, indent=2),
+            encoding="utf-8"
+        )
 
         # Write finals
         (inst_dir / "final_tests.diff").write_text(final_test_diff or "", encoding="utf-8")

@@ -470,3 +470,90 @@ def validate_all_anchors_system_generated(
                 errors.append(error)
 
     return errors
+
+
+# ============================================================================
+# DUPLICATE CODE DETECTION
+# ============================================================================
+
+def check_for_duplicate_code_patterns(
+    source_code: str,
+    edit_script: Dict
+) -> List[str]:
+    """
+    Check if edit script would create duplicate code patterns.
+
+    Detects cases where LLM used "insert" instead of "replace",
+    which creates duplicates of existing code.
+
+    Args:
+        source_code: Original source code
+        edit_script: Edit script to check
+
+    Returns:
+        List of warning messages (empty if no duplicates detected)
+    """
+    warnings = []
+
+    edits = edit_script.get('edits', [])
+    lines = source_code.split('\n')
+
+    for i, edit in enumerate(edits):
+        edit_type = edit.get('type')
+
+        # Only check insert operations (replace is safe)
+        if edit_type not in ('insert_before', 'insert_after'):
+            continue
+
+        content = edit.get('content', '')
+        if not content:
+            continue
+
+        # Get content lines
+        content_lines = content.strip().split('\n')
+
+        # Check if any content line already exists in source
+        for content_line in content_lines:
+            content_stripped = content_line.strip()
+
+            # Skip empty lines and comments
+            if not content_stripped or content_stripped.startswith('#'):
+                continue
+
+            # Check if this exact line exists in source
+            for src_line in lines:
+                if src_line.strip() == content_stripped:
+                    warnings.append(
+                        f"Edit {i+1}: Line '{content_stripped[:60]}...' already exists in source. "
+                        f"Consider using 'replace' instead of '{edit_type}' to avoid duplicates."
+                    )
+                    break
+
+    return warnings
+
+
+def validate_no_duplicate_code(
+    source_code: str,
+    edit_script: Dict
+) -> ValidationResult:
+    """
+    Validate that edit script won't create duplicate code.
+
+    This is a specialized validation to catch the common LLM error
+    of using "insert" when "replace" should be used.
+
+    Args:
+        source_code: Original source code
+        edit_script: Edit script
+
+    Returns:
+        ValidationResult with warnings for potential duplicates
+    """
+    warnings = check_for_duplicate_code_patterns(source_code, edit_script)
+
+    # No errors, only warnings
+    return ValidationResult(
+        is_valid=True,  # Still valid, but with warnings
+        errors=[],
+        warnings=warnings
+    )

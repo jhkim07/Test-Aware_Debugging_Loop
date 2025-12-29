@@ -1,0 +1,20 @@
+{
+  "instance_id": "sympy__sympy-12481",
+  "iterations": 0,
+  "max_iters": 8,
+  "time_limit_minutes": 120,
+  "scores": {
+    "hfs": 0.0,
+    "tss": 0.0,
+    "og": 0.0,
+    "brs": 0.0,
+    "overall": 0.15000000000000002
+  },
+  "final_iteration": {
+    "public_pass_rate": 0.0,
+    "hidden_pass_rate": 0.0,
+    "overfit_gap": 0.0,
+    "brs_fail_on_buggy": false
+  },
+  "note": "Metrics computed from harness reports. HFS=Hidden Fix Score, TSS=Test Strength Score, OG=Overfit Gap, BRS=Bug Reproduction Strength."
+}

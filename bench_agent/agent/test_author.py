@@ -45,4 +45,9 @@ Current tests hint (optional):
 Produce a unified diff for pytest tests only."""})
     output = chat(client, model, messages).strip()
     # Clean diff format: remove markdown markers, fix hunk headers, convert .ta_split.json
-    return clean_diff_format(output)
+    # SKIP when using Component 3 (Edit Script Mode) - LLM output is already in correct format
+    import os
+    USE_EDIT_SCRIPT = os.environ.get("USE_EDIT_SCRIPT") == "1"
+    if not USE_EDIT_SCRIPT:
+        return clean_diff_format(output)
+    return output

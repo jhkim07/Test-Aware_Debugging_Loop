@@ -1,0 +1,1 @@
+{"focus": "patch", "hypotheses": ["The ascii.qdp reader function in the astropy library is not handling QDP commands in a case-insensitive manner, leading to a ValueError when commands are in lowercase."], "targets": ["ascii.qdp reader function in the astropy library"]}

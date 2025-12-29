@@ -1,0 +1,1 @@
+{"focus": "patch", "hypotheses": ["The RST writer class in astropy.io.ascii needs to be modified to accept the 'header_rows' argument in its __init__ method to prevent the TypeError when writing a QTable with this parameter."], "targets": ["astropy.io.ascii.RST.__init__", "astropy.io.ascii.RST.write"]}

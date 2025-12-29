@@ -1,0 +1,25 @@
+runner:
+  mode: swebench_harness
+  dataset_name: princeton-nlp/SWE-bench_Lite
+
+instances:
+  list:
+  - astropy__astropy-14182
+
+limits:
+  max_iters: 8
+  time_limit_minutes: 60
+
+llm:
+  enabled: true
+  model: gpt-4o-mini
+
+policy:
+  forbid_skip: true
+  forbid_xfail: true
+  forbid_network: true
+  restrict_file_io: true
+
+split:
+  public_ratio: 0.7
+  seed: 0

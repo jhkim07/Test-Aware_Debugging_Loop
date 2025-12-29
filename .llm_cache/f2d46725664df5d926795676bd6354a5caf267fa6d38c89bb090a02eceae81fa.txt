@@ -1,0 +1,25 @@
+```diff
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+index 1234567..89abcde 100644
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -81,6 +81,18 @@ def test_roundtrip(tmp_path, lowercase):
+     path2 = str(tmp_path / "test2.qdp")
+ 
+ 
++def test_lowercase_qdp_commands(tmp_path):
++    """
++    Test that QDP files with lowercase commands are read correctly.
++    This reproduces the bug where lowercase commands would cause a failure.
++    """
++    qdp_content = "read serr 1 2\n1 0.5 1 0.5\n"
++    qdp_path = tmp_path / "lowercase.qdp"
++    qdp_path.write_text(qdp_content)
++
++    table = Table.read(qdp_path, format='ascii.qdp')
++    assert len(table) == 1
++
+ @pytest.mark.parametrize("lowercase", [False, True])
+ def test_roundtrip(tmp_path, lowercase):
+     example_qdp = """
+```

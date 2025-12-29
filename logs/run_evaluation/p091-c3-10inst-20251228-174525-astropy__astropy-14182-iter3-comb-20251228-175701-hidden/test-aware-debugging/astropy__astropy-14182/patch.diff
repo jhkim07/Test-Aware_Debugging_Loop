@@ -1,0 +1,43 @@
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -171,6 +171,24 @@
+ def test_write_normal():
++
++
++def test_rst_with_header_rows():
++    """Round-trip a table with header_rows specified"""
++    lines = [
++        "======= ======== ====",
++        "   wave response ints",
++        "     nm       ct     ",
++        "float64  float32 int8",
++        "======= ======== ====",
++        "  350.0      1.0    1",
++        "  950.0      2.0    2",
++        "======= ======== ====",
++    ]
++    tbl = QTable.read(lines, format="ascii.rst", header_rows=["name", "unit", "dtype"])
++    assert tbl["wave"].unit == u.nm
++    assert tbl["response"].unit == u.ct
++
+     """Write a table as a normal SimpleRST Table"""
+     out = StringIO()
+     ascii.write(dat, out, Writer=ascii.RST)
+
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,12 @@
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+
+-    def __init__(self):
++def __init__(self, header_rows=None):
+         super().__init__(delimiter_pad=None, bookend=False)
+
+-    def write(self, lines):
++def write(self, lines):
++        idx = len(self.header.header_rows)
++        lines = [lines[idx]] + lines + [lines[idx]]
+         lines = super().write(lines)
+         lines = [lines[1]] + lines + [lines[1]]
+         return lines

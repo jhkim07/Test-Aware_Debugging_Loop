@@ -1,0 +1,102 @@
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,64 @@
++"""
++Auto-injected by Test-Aware SWE-bench MVP (Option A).
++
++This conftest enables **public/hidden** test selection at pytest collection time,
++without changing the upstream test command.
++
++Usage:
++  - Public run:  export TA_SPLIT=public
++  - Hidden run:  export TA_SPLIT=hidden
++  - Default:     TA_SPLIT=public
++
++Split spec is stored in `.ta_split.json` at the repository root:
++  {
++    "public": ["tests/test_x.py::test_y", ...],
++    "hidden": ["tests/test_x.py::test_z", ...]
++  }
++
++If `.ta_split.json` is missing or empty for the requested split, all tests are collected.
++"""
++from __future__ import annotations
++
++import json
++import os
++from pathlib import Path
++from typing import Set
++
++import pytest
++
++SPLIT_ENV = "TA_SPLIT"
++SPLIT_FILE = ".ta_split.json"
++
++def _load_split(root: Path) -> dict[str, Set[str]]:
++    fp = root / SPLIT_FILE
++    if not fp.exists():
++        return {"public": set(), "hidden": set()}
++    data = json.loads(fp.read_text(encoding="utf-8"))
++    return {
++        "public": set(data.get("public", [])),
++        "hidden": set(data.get("hidden", [])),
++    }
++
++def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
++    split = os.environ.get(SPLIT_ENV, "public").strip().lower()
++    if split not in ("public", "hidden"):
++        return
++
++    root = Path(str(config.rootpath))
++    spec = _load_split(root)
++    target = spec.get(split, set())
++    if not target:
++        return
++
++    keep: list[pytest.Item] = []
++    deselected: list[pytest.Item] = []
++    for item in items:
++        key = item.nodeid
++        if key in target:
++            keep.append(item)
++        else:
++            deselected.append(item)
++
++    if deselected:
++        config.hook.pytest_deselected(items=deselected)
++        items[:] = keep
+ 
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+index 1234567..89abcde 100644
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -70,5 +70,7 @@
+     53000.123456 2.37847222222222e-05    -2.37847222222222e-05   -0.292553       -0.374935
+     NO 1.14467592592593e-05    -1.14467592592593e-05   0.000000        NO
+     """
++    if lowercase:
++        example_qdp = lowercase_header(example_qdp)
+ 
+     path = str(tmp_path / "test.qdp")
+     path2 = str(tmp_path / "test2.qdp")
+@@ -80,3 +82,20 @@
+     table.write(path2, format='ascii.qdp')
+     table2 = Table.read(path2, format='ascii.qdp')
+     assert np.all(table == table2)
++
++
++def test_lowercase_qdp_commands(tmp_path):
++    """
++    Test that QDP files with lowercase commands are read correctly.
++    """
++    qdp_content = """
++    read serr 1 2
++    1 0.5 1 0.5
++    """
++    path = tmp_path / "lowercase_test.qdp"
++    path.write_text(qdp_content)
++
++    table = Table.read(path, format='ascii.qdp')
++    assert len(table) == 1
++    assert table['col1'][0] == 1
++    assert table['col2'][0] == 0.5

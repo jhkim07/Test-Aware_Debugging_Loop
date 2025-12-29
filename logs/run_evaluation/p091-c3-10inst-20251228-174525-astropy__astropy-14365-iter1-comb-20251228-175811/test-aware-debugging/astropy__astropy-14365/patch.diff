@@ -1,0 +1,56 @@
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -224,6 +224,36 @@
+ def test_read_write_simple_specify_name(tmp_path):
++
++
++def test_read_lowercase_commands(tmp_path):
++    example_qdp = """
++        ! Initial comment line 1
++        ! Initial comment line 2
++        read terr 1
++        read serr 3
++        ! Table 0 comment
++        !a a(pos) a(neg) b c ce d
++        53000.5   0.25  -0.5   1  1.5  3.5 2
++        54000.5   1.25  -1.5   2  2.5  4.5 3
++        NO NO NO NO NO
++        ! Table 1 comment
++        !a a(pos) a(neg) b c ce d
++        54000.5   2.25  -2.5   NO  3.5  5.5 5
++        55000.5   3.25  -3.5   4  4.5  6.5 nan
++        """
++    dat = ascii.read(example_qdp, format="qdp", table_id=1, names=["a", "b", "c", "d"])
++    t = Table.read(
++        example_qdp, format="ascii.qdp", table_id=1, names=["a", "b", "c", "d"]
++    )
++
++    assert np.allclose(t["a"], [54000, 55000])
++    assert t["c_err"][0] == 5.5
++    assert np.ma.is_masked(t["b"][0])
++    assert np.isnan(t["d"][1])
++
++    for col1, col2 in zip(t.itercols(), dat.itercols()):
++        assert np.allclose(col1, col2, equal_nan=True)
+     test_file = tmp_path / "test.qdp"
+     t1 = Table()
+     t1.add_column(Column(name="a", data=[1, 2, 3]))
+
+--- a/astropy/io/ascii/qdp.py
++++ b/astropy/io/ascii/qdp.py
+@@ -17,7 +17,7 @@
+ from . import basic, core
+
+-def _line_type(line, delimiter=None):
++_line_type_re = re.compile(_type_re, re.IGNORECASE)
+     """Interpret a QDP file line.
+
+     Parameters
+@@ -234,7 +234,7 @@
+     return colnames
+
+-def _get_tables_from_qdp_file(qdp_file, input_colnames=None, delimiter=None):
++if v.upper() == "NO":
+     """Get all tables from a QDP file.
+
+     Parameters

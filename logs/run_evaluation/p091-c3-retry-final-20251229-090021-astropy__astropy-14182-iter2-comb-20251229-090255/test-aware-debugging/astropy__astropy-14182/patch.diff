@@ -1,0 +1,63 @@
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -11,6 +11,10 @@
+     assert_equal(arg1.splitlines(), arg2.splitlines())
+
++import numpy as np
++
++import astropy.units as u
++from astropy.table import QTable
+ def test_read_normal():
+     """Normal SimpleRST Table"""
+     table = """
+@@ -170,6 +174,26 @@
+ dat = ascii.read(table, Reader=ascii.RST)
+
++
++
++def test_rst_with_header_rows():
++    """Round-trip a table with header_rows specified"""
++    lines = [
++        "======= ======== ====",
++        "   wave response ints",
++        "     nm       ct     ",
++        "float64  float32 int8",
++        "======= ======== ====",
++        "  350.0      1.0    1",
++        "  950.0      2.0    2",
++        "======= ======== ====",
++    ]
++    tbl = QTable.read(lines, format="ascii.rst", header_rows=["name", "unit", "dtype"])
++    assert tbl["wave"].unit == u.nm
++    assert tbl["response"].unit == u.ct
++    assert tbl["ints"].dtype == np.int8
++    assert tbl["wave"][0] == 350.0
++    assert tbl["response"][1] == 2.0
+ def test_write_normal():
+     """Write a table as a normal SimpleRST Table"""
+     out = StringIO()
+
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -26,7 +26,6 @@
+         return vals, starts, ends
+
+-class SimpleRSTData(FixedWidthData):
+     start_line = 3
+     end_line = -1
+     splitter_class = FixedWidthTwoLineDataSplitter
+@@ -57,10 +56,11 @@
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)
+
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        idx = len(self.header.header_rows)
++        lines = [lines[idx]] + lines + [lines[idx]]
+         return lines

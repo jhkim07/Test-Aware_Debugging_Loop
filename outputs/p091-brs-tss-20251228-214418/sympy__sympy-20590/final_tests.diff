@@ -1,0 +1,18 @@
+--- a/sympy/core/tests/test_basic.py
++++ b/sympy/core/tests/test_basic.py
+@@ -29,6 +29,15 @@
+ 
+ 
+ def test_structure():
++
++
++def test_symbol_dict():
++    s = Symbol('s')
++    assert hasattr(s, '__dict__'), "Symbol should have a __dict__ attribute starting from version 1.7"
++    assert s.__dict__ == {}, "The __dict__ of a Symbol instance should be an empty dictionary"
++
++    assert hasattr(s, '__slots__'), "Symbol should have __slots__ defined"
++    assert s.__slots__ == ('name',), "The __slots__ of a Symbol instance should only contain 'name'",
+     assert b21.args == (b2, b1)
+     assert b21.func(*b21.args) == b21
+     assert bool(b1)

@@ -1,0 +1,27 @@
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -171,6 +171,24 @@
+ 
+ 
+ def test_write_normal():
++
++
++def test_rst_with_header_rows():
++    """Test writing and reading a table with header_rows specified"""
++    lines = [
++        "======= ========",
++        "   wave response",
++        "     nm       ct",
++        "======= ========",
++        "  350.0      0.7",
++        "  950.0      1.2",
++        "======= ========",
++    ]
++    tbl = QTable.read(lines, format="ascii.rst", header_rows=["name", "unit"])
++    assert tbl["wave"].unit == u.nm
++    assert tbl["response"].unit == u.count
++    assert tbl["wave"][0] == 350.0
++    assert tbl["response"][0] == 0.7
+     """Write a table as a normal SimpleRST Table"""
+     out = StringIO()
+     ascii.write(dat, out, Writer=ascii.RST)

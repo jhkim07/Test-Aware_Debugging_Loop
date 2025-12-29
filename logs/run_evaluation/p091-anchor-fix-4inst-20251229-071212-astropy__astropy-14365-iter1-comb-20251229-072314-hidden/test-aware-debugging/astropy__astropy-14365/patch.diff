@@ -1,0 +1,52 @@
+```diff
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+index 1234567..89abcde 100644
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -81,3 +81,25 @@ def test_roundtrip(tmp_path, lowercase):
+     path = str(tmp_path / "test.qdp")
+     path2 = str(tmp_path / "test2.qdp")
+
++def test_lowercase_qdp_commands(tmp_path):
++    """
++    Test that QDP files with lowercase commands are read correctly.
++    This test reproduces the bug where lowercase QDP commands would cause a crash.
++    """
++    qdp_content = """
++    read serr 1 2
++    1 0.5 1 0.5
++    """
++    path = tmp_path / "lowercase_test.qdp"
++    path.write_text(qdp_content)
++
++    from astropy.table import Table
++    table = Table.read(path, format='ascii.qdp')
++
++    # Expected data: two columns with errors
++    expected_data = [
++        (1.0, 0.5, 1.0, 0.5)
++    ]
++
++    assert len(table) == 1
++    assert table[0] == expected_data[0]
+```
+
+--- a/astropy/io/ascii/qdp.py
++++ b/astropy/io/ascii/qdp.py
+@@ -68,7 +68,7 @@
+     _new_re = rf"NO({sep}NO)+"
+     _data_re = rf"({_decimal_re}|NO|[-+]?nan)({sep}({_decimal_re}|NO|[-+]?nan))*)"
+     _type_re = rf"^\s*((?P<command>{_command_re})|(?P<new>{_new_re})|(?P<data>{_data_re})?\s*(\!(?P<comment>.*))?\s*$"
+-    _line_type_re = re.compile(_type_re)
++    _line_type_re = re.compile(_type_re, re.IGNORECASE)
+     line = line.strip()
+     if not line:
+         return "comment"
+@@ -306,7 +306,7 @@
+             values = []
+             for v in line.split(delimiter):
+-                if v == "NO":
++                if v.upper() == "NO":
+                     values.append(np.ma.masked)
+                 else:
+                     # Understand if number is int or float

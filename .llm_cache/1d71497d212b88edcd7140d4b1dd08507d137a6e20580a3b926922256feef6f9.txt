@@ -1,0 +1,18 @@
+```diff
+diff --git a/sympy/core/tests/test_basic.py b/sympy/core/tests/test_basic.py
+--- a/sympy/core/tests/test_basic.py
++++ b/sympy/core/tests/test_basic.py
+@@ -34,6 +34,12 @@ def test_structure():
+     assert bool(b1)
+ 
+ 
++def test_immutable():
++    s = sympy.Symbol('s')
++    assert not hasattr(s, '__dict__')  # Ensure __dict__ does not exist
++    with raises(AttributeError):
++        s.x = 1  # Attempting to set an attribute should raise an error
++
+ 
+ def test_equality():
+     instances = [b1, b2, b3, b21, Basic(b1, b1, b1), Basic]
+```

@@ -1,0 +1,27 @@
+--- a/astropy/modeling/tests/test_separable.py
++++ b/astropy/modeling/tests/test_separable.py
+@@ -114,6 +114,24 @@
+ 
+ 
+ def test_arith_oper():
++def test_nested_compound_models_separability():
++    cm = models.Linear1D(10) & models.Linear1D(5)
++    expected_cm = np.array([[True, False], [False, True]])
++    assert_allclose(separability_matrix(cm), expected_cm)
++
++    cm_complex = models.Pix2Sky_TAN() & models.Linear1D(10) & models.Linear1D(5)
++    expected_cm_complex = np.array([[True, True, False, False],
++                                    [True, True, False, False],
++                                    [False, False, True, False],
++                                    [False, False, False, True]])
++    assert_allclose(separability_matrix(cm_complex), expected_cm_complex)
++
++    cm_nested = models.Pix2Sky_TAN() & cm
++    expected_cm_nested = np.array([[True, True, False, False],
++                                   [True, True, False, False],
++                                   [False, False, True, True],
++                                   [False, False, True, True]])
++    assert_allclose(separability_matrix(cm_nested), expected_cm_nested)
+     # Models as inputs
+     result = _arith_oper(sh1, scl1)
+     assert_allclose(result, np.array([[1]]))

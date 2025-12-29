@@ -3,13 +3,21 @@ Phase 2: Two-Stage Wrapper
 
 Unified interface for 2-stage Plan-then-Diff architecture.
 Combines Planner (Stage A) and Diff Writer (Stage B).
+
+Phase 2.2: Enhanced with iteration feedback and error tracking.
 """
 
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from bench_agent.agent.planner import generate_plan, validate_plan_schema
 from bench_agent.agent.diff_writer import render_diff, validate_diff_matches_plan
+from bench_agent.agent.diff_syntax_validator import (
+    validate_diff_syntax,
+    sanitize_diff,
+    complete_hunk_headers,
+    sanitize_multiline_strings
+)
 from bench_agent.protocol.diff_cleaner import clean_diff_format
 
 
@@ -46,10 +54,13 @@ def generate_diff_two_stage(
     client,
     context: Dict,
     mode: str = "research",
-    max_retries: int = 2
+    max_retries: int = 2,
+    previous_errors: Optional[List[str]] = None
 ) -> str:
     """
     Unified 2-stage generation for both test and code diffs.
+
+    Phase 2.2: Enhanced with iteration feedback.
 
     Args:
         role: "test" or "code"
@@ -57,6 +68,7 @@ def generate_diff_two_stage(
         context: Dict with problem_statement, reference_patch, etc.
         mode: "research" or "official"
         max_retries: Max retries for Writer (Stage B)
+        previous_errors: List of errors from previous iterations (Phase 2.2)
 
     Returns:
         Unified diff string
@@ -85,22 +97,53 @@ def generate_diff_two_stage(
     print(f"[Stage A] Plan generated and validated")
 
     # ========================================================================
-    # STAGE B: DIFF WRITER (with retry)
+    # STAGE B: DIFF WRITER (with retry and iteration feedback)
     # ========================================================================
 
     last_error = None
+    error_accumulator = previous_errors.copy() if previous_errors else []
 
     for attempt in range(max_retries + 1):
         try:
-            diff = render_diff(role, plan, client, writer_model, context)
+            # Phase 2.2: Pass previous errors to Writer
+            writer_context = context.copy()
+            if error_accumulator:
+                writer_context['previous_errors'] = error_accumulator
+
+            diff = render_diff(role, plan, client, writer_model, writer_context)
 
             # Validate diff matches plan
             ok, msg = validate_diff_matches_plan(diff, plan, role)
             if not ok:
+                error_accumulator.append(f"Plan-Diff mismatch: {msg}")
                 raise ValueError(f"Plan-Diff mismatch: {msg}")
 
-            # Clean diff format (remove any remaining markdown, etc.)
-            diff = clean_diff_format(diff)
+            # Phase 2.2: Full sanitization pipeline
+            # Step 1: Apply sanitization (removes stray quotes, completes headers)
+            original_diff = diff
+            diff, sanitization_warnings = sanitize_diff(diff)
+
+            # Filter out informational warnings (changes that were successfully applied)
+            # Only keep actual validation errors
+            error_warnings = [w for w in sanitization_warnings if w.startswith("Validation:")]
+            info_warnings = [w for w in sanitization_warnings if not w.startswith("Validation:")]
+
+            if info_warnings:
+                print(f"[Stage B] Sanitization applied: {len(info_warnings)} fixes")
+                for warning in info_warnings:
+                    print(f"  ✓ {warning}")
+
+            # Step 2: Syntax validation (after sanitization)
+            # Only fail if there are actual validation errors AFTER sanitization
+            if error_warnings:
+                print(f"[Stage B] Validation errors after sanitization:")
+                for warning in error_warnings:
+                    print(f"  ✗ {warning}")
+                error_accumulator.extend(error_warnings)
+                raise ValueError(f"Diff syntax validation failed:\n{'; '.join(error_warnings)}")
+
+            # Step 3: Clean diff format - SKIP for Phase 2.2 (already sanitized)
+            # diff = clean_diff_format(diff)  # Disabled - sanitization handles this
 
             print(f"[Stage B] Diff generated and validated (attempt {attempt + 1})")
             return diff
@@ -108,7 +151,7 @@ def generate_diff_two_stage(
         except Exception as e:
             last_error = e
             if attempt < max_retries:
-                print(f"[Stage B] Attempt {attempt + 1} failed: {e}. Retrying...")
+                print(f"[Stage B] Attempt {attempt + 1} failed: {e}. Retrying with feedback...")
             else:
                 print(f"[Stage B] All {max_retries + 1} attempts failed")
 
