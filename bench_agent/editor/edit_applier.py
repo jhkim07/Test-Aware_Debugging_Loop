@@ -131,6 +131,9 @@ def _find_anchor(
     """
     Find anchor in lines.
 
+    CRITICAL FIX (P0.9.3 Phase 2.1): Added support for 'two_line' anchor type.
+    This matches the fix in anchor_extractor.py to enable 2-line anchor usage.
+
     Args:
         lines: Source code lines
         anchor: Anchor specification dict
@@ -145,6 +148,30 @@ def _find_anchor(
     if not selected_text:
         return (None, 0)
 
+    # Special handling for two-line anchors
+    if anchor_type == 'two_line':
+        # selected_text format: "before_line\ntarget_line"
+        if '\n' in selected_text:
+            parts = selected_text.split('\n', 1)
+            if len(parts) == 2:
+                before_text, target_text = parts
+                before_stripped = before_text.strip()
+                target_stripped = target_text.strip()
+
+                occurrences = []
+                for i in range(1, len(lines)):  # Start from 1 (need before line)
+                    if (lines[i-1].strip() == before_stripped and
+                        lines[i].strip() == target_stripped):
+                        occurrences.append(i)  # Index of target line
+
+                if not occurrences:
+                    return (None, 0)
+                return (occurrences[0], len(occurrences))
+
+        # Malformed two_line anchor
+        return (None, 0)
+
+    # Standard anchor types
     selected_stripped = selected_text.strip()
     occurrences = []
 
@@ -240,11 +267,31 @@ def _insert_before(lines: List[str], anchor_idx: int, content: str) -> List[str]
 
 
 def _replace_line(lines: List[str], anchor_idx: int, content: str) -> List[str]:
-    """Replace anchor line with content."""
+    """
+    Replace anchor line with content, preserving indentation.
+
+    CRITICAL: The LLM provides content WITHOUT indentation.
+    We must preserve the original line's indentation to avoid syntax errors.
+    """
+    # Get original line's indentation
+    original_line = lines[anchor_idx]
+    indent = len(original_line) - len(original_line.lstrip())
+    indent_str = original_line[:indent]
+
     new_lines = lines[:anchor_idx]
     # Use splitlines() to avoid empty strings from leading/trailing newlines
     content_lines = content.splitlines() if content else []
-    new_lines.extend(content_lines)
+
+    # Apply original indentation to each line of new content
+    indented_content = []
+    for line in content_lines:
+        # Only add indentation if the line is not empty
+        if line.strip():
+            indented_content.append(indent_str + line.lstrip())
+        else:
+            indented_content.append(line)  # Keep empty lines as-is
+
+    new_lines.extend(indented_content)
     new_lines.extend(lines[anchor_idx + 1:])
     return new_lines
 

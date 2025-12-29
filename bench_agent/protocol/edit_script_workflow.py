@@ -20,6 +20,17 @@ from bench_agent.editor import (
     EDIT_SCRIPT_SYSTEM_PROMPT
 )
 from bench_agent.editor.edit_validator import validate_no_duplicate_code, auto_fix_duplicate_code
+from bench_agent.editor.target_line_extractor import (
+    extract_target_line_multi_strategy,
+    format_target_line_log
+)
+from bench_agent.protocol.malformed_patch_gates import (
+    gate_m1_no_markdown_fence,
+    gate_m2_json_only,
+    gate_m3_diff_source_invariant,
+    MalformedPatchError,
+    generate_malformed_patch_feedback
+)
 
 
 # ============================================================================
@@ -114,7 +125,16 @@ def generate_test_diff_edit_script(
 
             response_text = response.choices[0].message.content
 
-            # Step 4: Parse JSON
+            # Step 4a: Gate M2 - Enforce JSON-only format
+            try:
+                gate_m2_json_only(response_text, expected_type="edit_script")
+            except MalformedPatchError as e:
+                print(f"🚫 Gate M2 REJECTED (test): {e.reason}")
+                feedback = generate_malformed_patch_feedback(e)
+                metadata['errors'].append(f"Gate M2: {e.reason}")
+                continue  # Retry
+
+            # Step 4b: Parse JSON
             try:
                 edit_script = json.loads(response_text)
                 metadata['edit_script'] = edit_script
@@ -229,7 +249,29 @@ Try again with the CORRECT edit types!
                 test_file_path
             )
 
+            # Step 8: Gate M1 - No markdown fence
+            try:
+                gate_m1_no_markdown_fence(diff)
+            except MalformedPatchError as e:
+                print(f"🚫 Gate M1 REJECTED (test): {e.reason}")
+                metadata['errors'].append(f"Gate M1: {e.reason}")
+                # This should NEVER happen with difflib-generated diffs
+                # If it does, it's a serious bug
+                raise RuntimeError(f"difflib generated invalid diff: {e.reason}")
+
+            # Step 9: Gate M3 - Diff source invariant
+            try:
+                gate_m3_diff_source_invariant(
+                    use_edit_script=True,
+                    diff_source="difflib",
+                    diff_content=diff
+                )
+            except MalformedPatchError as e:
+                print(f"🚫 Gate M3 REJECTED (test): {e.reason}")
+                raise RuntimeError(f"Diff source invariant violated: {e.reason}")
+
             metadata['success'] = True
+            metadata['diff_source'] = 'difflib'  # Track source
             return diff, metadata
 
         except Exception as e:
@@ -286,6 +328,17 @@ def generate_code_diff_edit_script(
         metadata['retry_count'] = attempt
 
         try:
+            # Step 0 (P0.9.3 Phase 2.1): Extract target line from reference patch
+            target_line_info = extract_target_line_multi_strategy(
+                source_code=code_source,
+                reference_patch=reference_patch,
+                filepath=code_file_path
+            )
+            target_line = target_line_info.line_number if target_line_info else None
+
+            # Log target line extraction result
+            print(f"🎯 Target line: {format_target_line_log(target_line_info)}")
+
             # Step 1: Extract anchor candidates
             candidates = extract_anchor_candidates(code_source)
 
@@ -305,7 +358,7 @@ def generate_code_diff_edit_script(
                 source_code=code_source,
                 task_description=task_description,
                 test_results=test_results,
-                target_line=None,
+                target_line=target_line,  # P0.9.3 Phase 2.1: Use extracted target line
                 max_candidates=20
             )
 
@@ -325,7 +378,16 @@ def generate_code_diff_edit_script(
 
             response_text = response.choices[0].message.content
 
-            # Step 4: Parse JSON
+            # Step 4a: Gate M2 - Enforce JSON-only format
+            try:
+                gate_m2_json_only(response_text, expected_type="edit_script")
+            except MalformedPatchError as e:
+                print(f"🚫 Gate M2 REJECTED (code): {e.reason}")
+                feedback = generate_malformed_patch_feedback(e)
+                metadata['errors'].append(f"Gate M2: {e.reason}")
+                continue  # Retry
+
+            # Step 4b: Parse JSON
             try:
                 edit_script = json.loads(response_text)
                 metadata['edit_script'] = edit_script
@@ -423,7 +485,28 @@ Try again with CORRECT edit types!
                 code_file_path
             )
 
+            # Step 8: Gate M1 - No markdown fence
+            try:
+                gate_m1_no_markdown_fence(diff)
+            except MalformedPatchError as e:
+                print(f"🚫 Gate M1 REJECTED (code): {e.reason}")
+                metadata['errors'].append(f"Gate M1: {e.reason}")
+                # This should NEVER happen with difflib-generated diffs
+                raise RuntimeError(f"difflib generated invalid diff: {e.reason}")
+
+            # Step 9: Gate M3 - Diff source invariant
+            try:
+                gate_m3_diff_source_invariant(
+                    use_edit_script=True,
+                    diff_source="difflib",
+                    diff_content=diff
+                )
+            except MalformedPatchError as e:
+                print(f"🚫 Gate M3 REJECTED (code): {e.reason}")
+                raise RuntimeError(f"Diff source invariant violated: {e.reason}")
+
             metadata['success'] = True
+            metadata['diff_source'] = 'difflib'  # Track source
             return diff, metadata
 
         except Exception as e:
