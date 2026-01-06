@@ -136,6 +136,27 @@ def main():
 
             if not should_continue_test:
                 console.print(f"[yellow]Safety guard: {stop_reason_test}[/yellow]")
+
+                # P0-1 Phase 1: Diagnostic analysis (record-only, no fallthrough activation)
+                diagnostic = safety_controller.test_candidate_tracker.get_diagnostic_summary()
+
+                console.print(f"[dim]╔═══ P0-1 DIAGNOSTIC ═══════════════════════╗[/dim]")
+                console.print(f"[dim]║ Candidates: {diagnostic.get('total_candidates', 0):2d}                             ║[/dim]")
+                console.print(f"[dim]║ Executable: {diagnostic.get('valid_for_fallthrough', 0):2d}                             ║[/dim]")
+                best_score = diagnostic.get('best_executable_score')
+                score_str = f"{best_score:.1f}" if best_score is not None else "N/A"
+                console.print(f"[dim]║ Best score: {score_str:4s}                          ║[/dim]")
+                console.print(f"[dim]║ Stuck: {str(diagnostic.get('stuck_pattern_detected', False)):5s}                                ║[/dim]")
+                stages_str = str(diagnostic.get('failure_stages', {}))[:30]
+                console.print(f"[dim]║ Stages: {stages_str:30s} ║[/dim]")
+                console.print(f"[dim]╚════════════════════════════════════════════╝[/dim]")
+
+                write_jsonl(log_path, {
+                    "stage": "test_exhaustion_reached",
+                    "iteration": it,
+                    "diagnostic": diagnostic
+                })
+
                 break
 
             if not should_continue_code:
@@ -584,6 +605,26 @@ def main():
             brs_fail = not brs_report["ok"]  # Tests should fail to reproduce bug
             brs_pass_rate = brs_report["pass_rate"]
 
+            # P0-1 Phase 1: Record test candidate for diagnostic analysis
+            error_stderr = str(brs_res.raw_stderr) if brs_res.raw_stderr else ""
+            error_stdout = str(brs_res.raw_stdout) if brs_res.raw_stdout else ""
+            combined_error = error_stderr + " " + error_stdout
+
+            safety_controller.add_test_candidate(
+                iteration=it,
+                test_diff=test_diff,
+                brs_satisfied=brs_fail,  # CRITICAL: True = tests FAIL on buggy = good = reproduces bug
+                public_pass_count=brs_report.get('passed', 0),
+                public_fail_count=brs_report.get('failed', 0),
+                runs_ok=brs_report.get('ok', False),
+                patch_apply_ok=not brs_report.get('patch_apply_failed', False),
+                policy_violation=not policy_validation_passed,
+                syntax_error='SyntaxError' in combined_error,
+                import_error=('ImportError' in combined_error or 'ModuleNotFoundError' in combined_error),
+                collection_error=('collection error' in combined_error.lower() or 'cannot collect' in combined_error.lower()),
+                error_message=error_stderr[:500] if error_stderr else ""
+            )
+
             # Extract error information for feedback
             from bench_agent.runner.error_analyzer import extract_patch_apply_errors, extract_test_failure_errors, generate_error_feedback
 
@@ -991,6 +1032,10 @@ Reference Test Patch Analysis:
                 "overfit_gap": og,
                 "brs_fail_on_buggy": brs_final.get("fail_on_buggy", False),
             },
+            # P0-1 Phase 1: Full diagnostic data for fallthrough analysis
+            "p01_diagnostic": safety_controller.test_candidate_tracker.get_diagnostic_summary(),
+            "test_iterations_used": safety_controller.test_iterations,
+            "code_iterations_used": safety_controller.code_iterations,
             "note": "Metrics computed from harness reports. HFS=Hidden Fix Score, TSS=Test Strength Score, OG=Overfit Gap, BRS=Bug Reproduction Strength.",
         }
         (inst_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
